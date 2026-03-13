@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+rapidfuzz
+symspellpy
+opensearch-py
+pandas
+Metaphone

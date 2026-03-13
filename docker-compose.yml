@@ -1,0 +1,90 @@
+
+services:
+
+  # ==============================
+  # OpenSearch
+  # ==============================
+  opensearch:
+    build:
+      context: ./docker/opensearch
+    container_name: opensearch
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      - bootstrap.memory_lock=true
+      - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - jewellery-network
+
+  # ==============================
+  # OpenSearch Dashboards
+  # ==============================
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    container_name: dashboards
+    ports:
+      - "5601:5601"
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+    depends_on:
+      - opensearch
+    networks:
+      - jewellery-network
+
+  # ==============================
+  # Redis (Optional Cache)
+  # ==============================
+  redis:
+    image: redis:7
+    container_name: jewellery-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - jewellery-network
+
+  # ==============================
+  # FastAPI Search API
+  # ==============================
+  api:
+    build:
+      context: .
+      dockerfile: docker/fastapi/Dockerfile
+    container_name: jewellery-search-api
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      - opensearch
+      - redis
+    networks:
+      - jewellery-network
+
+
+# ==============================
+# Volumes
+# ==============================
+volumes:
+  opensearch-data:
+  redis-data:
+
+# ==============================
+# Networks
+# ==============================
+networks:
+  jewellery-network:
+    driver: bridge
