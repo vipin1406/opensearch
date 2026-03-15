@@ -83,7 +83,7 @@ mapping = {
    "coated_with": {"type": "text","analyzer":"standard"},
    "stone_type": {"type": "keyword"},
    "metal_colour": {"type": "keyword"},
-   "layers": {"type": "keyword"},
+   "layers": {"type": "integer"},
    "pendant": {"type": "keyword"},
    "religion": {"type": "keyword"},
    "no_of_mugappu": {"type": "keyword"},

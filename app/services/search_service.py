@@ -17,20 +17,24 @@ def search_products(query):
     print("Generated Query:", body)
 
     response = client.search(
-        index="jewellery_products",
-        body=body
+    index="jewellery_products",
+    body=body
     )
 
     hits = response["hits"]["hits"]
 
-    print("\nTop Results:")
+    # ----------------------------------------
+    # FALLBACK — filters only search
+    # ----------------------------------------
+    if len(hits) == 0 and filters:
 
-    for hit in hits[:5]:
-        print(
-            hit["_source"]["product_name"],
-            "| score:", hit["_score"]
+        print("\n[FALLBACK] No text match. Running filter-only search")
+
+        body = build_search_query("", filters)
+
+        response = client.search(
+            index="jewellery_products",
+            body=body
         )
 
-    print("====================================\n")
-
-    return [hit["_source"] for hit in hits]
+    return response

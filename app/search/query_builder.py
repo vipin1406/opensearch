@@ -15,6 +15,7 @@ def build_search_query(search_text, filters=None):
     print("Incoming Filters →", filters)
 
     body = {
+        "size":100,
         "query": {
             "bool": {
                 "must": [],
@@ -104,12 +105,12 @@ def build_search_query(search_text, filters=None):
 
         body["query"]["bool"]["must"].append(search_clause)
 
-        print("\nSearch clause successfully added.")
+        print("\n✔ Search clause successfully added.")
 
     else:
 
         print("\n[STEP 1] No search text provided.")
-        print("Only filters will be applied.")
+        print("✔ Only filters will be applied.")
 
     # ------------------------------------------------
     # STEP 2 — APPLY FILTERS
@@ -120,11 +121,44 @@ def build_search_query(search_text, filters=None):
 
         for key, value in filters.items():
 
-            filter_clause = {"term": {key: value}}
+            print(f"\nProcessing Filter → {key}: {value}")
 
-            body["query"]["bool"]["filter"].append(filter_clause)
+            # -------- WEIGHT RANGE FILTER --------
+            if key == "weight_range":
 
-            print(f" ✔ Filter applied → {key} = {value}")
+                filter_clause = {
+                    "range": {
+                        "weight": value
+                    }
+                }
+
+                body["query"]["bool"]["filter"].append(filter_clause)
+
+                print(" ✔ Weight range filter applied")
+
+            # -------- LAYERS RANGE FILTER --------
+            elif key == "layers_range":
+
+                filter_clause = {
+                    "range": {
+                        "layers": {
+                            "gte": value
+                        }
+                    }
+                }
+
+                body["query"]["bool"]["filter"].append(filter_clause)
+
+                print(f" ✔ Range Filter applied → layers >= {value}")
+
+            # -------- NORMAL TERM FILTER --------
+            else:
+
+                filter_clause = {"term": {key: value}}
+
+                body["query"]["bool"]["filter"].append(filter_clause)
+
+                print(f" ✔ Filter applied → {key} = {value}")
 
     else:
 

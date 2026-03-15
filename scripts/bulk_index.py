@@ -1,21 +1,64 @@
 import pandas as pd
 import numpy as np
+import re
 from opensearchpy import OpenSearch, helpers
 
+
+# ------------------------------------------------
+# CONNECT TO OPENSEARCH
+# ------------------------------------------------
 client = OpenSearch(
     hosts=[{"host": "opensearch", "port": 9200}]
 )
 
-# Load CSV
+
+# ------------------------------------------------
+# NORMALIZE LAYERS FUNCTION
+# ------------------------------------------------
+def normalize_layers(value):
+
+    if not value:
+        return None
+
+    value = str(value).lower().strip()
+
+    # handle multiple layers
+    if "multiple" in value or "multi" in value:
+        return 4
+
+    # extract numeric value
+    match = re.search(r"\d+", value)
+
+    if match:
+        return int(match.group())
+
+    return None
+
+
+# ------------------------------------------------
+# LOAD CSV
+# ------------------------------------------------
 df = pd.read_csv("data/final_data.csv", low_memory=False)
 
-# Remove unwanted column
+print("\nCSV Loaded")
+print("Total rows:", len(df))
+
+
+# ------------------------------------------------
+# REMOVE UNWANTED COLUMN
+# ------------------------------------------------
 df = df.drop(columns=["Unnamed: 0"], errors="ignore")
 
-# Replace NaN values
+
+# ------------------------------------------------
+# REPLACE NaN VALUES
+# ------------------------------------------------
 df = df.replace({np.nan: None})
 
-# Ensure numeric columns are correct
+
+# ------------------------------------------------
+# ENSURE NUMERIC COLUMNS
+# ------------------------------------------------
 numeric_columns = ["length", "size", "weight"]
 
 for col in numeric_columns:
@@ -24,13 +67,70 @@ for col in numeric_columns:
 
 df = df.replace({np.nan: None})
 
+import re
+
+def normalize_layers(value):
+
+    if not value:
+        return None
+
+    value = str(value).lower().strip()
+
+    if value == "none":
+        return None
+
+    if "multiple" in value or "multi" in value:
+        return 4
+
+    match = re.search(r"\d+", value)
+
+    if match:
+        return int(match.group())
+
+    return None
+
+
+# apply normalization
+if "layers" in df.columns:
+    df["layers"] = df["layers"].apply(normalize_layers)
+
+print("\nLayer distribution after normalization:")
+print(df["layers"].value_counts(dropna=False))
+
+
+# ------------------------------------------------
+# NORMALIZE LAYERS COLUMN
+# ------------------------------------------------
+if "layers" in df.columns:
+
+    print("\nNormalizing layers column...")
+
+    df["layers"] = df["layers"].apply(normalize_layers)
+
+    print("Unique normalized layer values:")
+    print(df["layers"].unique())
+
+df = df.where(pd.notnull(df), None)
+
+# ------------------------------------------------
+# PREPARE BULK ACTIONS
+# ------------------------------------------------
 actions = []
 
 for _, row in df.iterrows():
 
-    
+    doc = row.to_dict()
+
+    actions = []
+
+for _, row in df.iterrows():
 
     doc = row.to_dict()
+
+    # 🔧 FIX: convert NaN → None
+    for key, value in doc.items():
+        if pd.isna(value):
+            doc[key] = None
 
     actions.append({
         "_index": "jewellery_products",
@@ -38,6 +138,14 @@ for _, row in df.iterrows():
         "_source": doc
     })
 
+
+print("\nPreparing to index documents...")
+print("Total documents:", len(actions))
+
+
+# ------------------------------------------------
+# BULK INDEX
+# ------------------------------------------------
 helpers.bulk(client, actions, chunk_size=500)
 
-print("Bulk indexing completed successfully")
+print("\nBulk indexing completed successfully!")

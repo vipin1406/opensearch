@@ -6,6 +6,7 @@ client = OpenSearch(
 
 INDEX_NAME = "jewellery_products"
 
+
 def load_catalog_entities():
 
     print("\n================================================")
@@ -46,14 +47,6 @@ def load_catalog_entities():
                     }
                 },
 
-                
-                "layers": {
-                    "terms": {
-                        "field": "layers",
-                        "size": 100
-                    }
-                },
-
                 "pendant": {
                     "terms": {
                         "field": "pendant",
@@ -90,12 +83,6 @@ def load_catalog_entities():
             b["key"] for b in response["aggregations"]["metal_colour"]["buckets"]
         ],
 
-        
-
-        "layers": [
-            b["key"] for b in response["aggregations"]["layers"]["buckets"]
-        ],
-
         "pendant": [
             b["key"] for b in response["aggregations"]["pendant"]["buckets"]
         ],
@@ -109,7 +96,6 @@ def load_catalog_entities():
     print("\n================ ENTITY VALUES ================")
 
     for field, values in entities.items():
-
         print(f"{field} → {values}")
 
     print("===============================================\n")

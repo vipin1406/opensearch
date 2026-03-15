@@ -1,26 +1,58 @@
-import pandas as pd
+import re
 
-df = pd.read_csv("data/result.csv")
 
-# remove unwanted column
-df = df.drop(columns=["Unnamed: 0"], errors="ignore")
+def normalize_layers(value):
 
-# normalize NA values
-df = df.replace("<na>", None)
+    print("\n------------------------------------")
+    print("NORMALIZING LAYERS VALUE")
+    print("------------------------------------")
+    print("Raw value:", value)
 
-# lowercase text fields
-text_fields = [
-    "metal",
-    "purity",
-    "product_type",
-    "stone_type",
-    "gender"
-]
+    if not value:
+        print("No layer value found → returning None")
+        return None
 
-for col in text_fields:
-    if col in df.columns:
-        df[col] = df[col].str.lower()
+    value = str(value).lower().strip()
 
-df.to_csv('data/fina_result.csv')
+    print("Normalized text:", value)
 
-print("Data cleaned successfully")
+    # -----------------------------------
+    # Handle multiple / multi layer
+    # -----------------------------------
+    if "multiple" in value or "multi" in value:
+        print("Detected MULTIPLE layer → mapped to 4")
+        return 4
+
+    # -----------------------------------
+    # Extract numeric layers
+    # -----------------------------------
+    match = re.search(r"\d+", value)
+
+    if match:
+
+        layer_number = int(match.group())
+
+        print("Detected numeric layer →", layer_number)
+
+        return layer_number
+
+    # -----------------------------------
+    # Handle text numbers
+    # -----------------------------------
+    text_layers = {
+        "single": 1,
+        "double": 2,
+        "triple": 3
+    }
+
+    for word, number in text_layers.items():
+
+        if word in value:
+
+            print(f"Detected text layer '{word}' → mapped to {number}")
+
+            return number
+
+    print("No layer pattern detected → returning None")
+
+    return None

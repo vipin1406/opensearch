@@ -75,8 +75,114 @@ def extract_intent(query):
 
     print("Query after purity removal:", query)
 
+
     # ------------------------------------------------
-    # STEP 3 — LOAD CATALOG ENTITIES
+    # STEP 3 — LAYER DETECTION
+    # ------------------------------------------------
+    print("\n[STEP 2] LAYER DETECTION")
+
+    layer_pattern = r"(\d+)\s*layer"
+
+    match = re.search(layer_pattern, query.lower())
+
+    if match:
+
+        layer_value = int(match.group(1))
+
+        # If layer >= 4 treat as multiple layer
+        if layer_value >= 4:
+
+            filters["layers_range"] = layer_value
+
+            print("✔ Matched MULTIPLE LAYERS → >=", layer_value)
+
+        else:
+
+            filters["layers"] = layer_value
+
+            print("✔ Matched LAYERS →", layer_value)
+
+        query = query.replace(match.group(0), "")
+
+
+
+    # ------------------------------------------------
+    # STEP 3 — WEIGHT DETECTION
+    # ------------------------------------------------
+
+    print("\n[STEP] WEIGHT DETECTION")
+
+    query_lower = query.lower()
+
+    # detect sovereign
+    sovereign_match = re.search(r'(under|below|above|over)?\s*(\d+)\s*sovereign', query_lower)
+
+    if sovereign_match:
+
+        condition = sovereign_match.group(1)
+        sovereign = int(sovereign_match.group(2))
+
+        grams = sovereign * 8
+
+        if condition in ["under", "below"]:
+
+            filters["weight_range"] = {"lte": grams}
+            print(f"✔ Matched WEIGHT → <= {grams} grams")
+
+        elif condition in ["above", "over"]:
+
+            filters["weight_range"] = {"gte": grams}
+            print(f"✔ Matched WEIGHT → >= {grams} grams")
+
+        else:
+
+            filters["weight_range"] = {"gte": grams, "lte": grams}
+            print(f"✔ Matched WEIGHT → {grams} grams")
+
+        query = query.replace(sovereign_match.group(0), "")
+
+
+    gram_match = re.search(r'(\d+)\s*(g|gram|grams)', query_lower)
+
+
+    if gram_match:
+
+        weight = int(gram_match.group(1))
+
+        filters["weight_range"] = {"gte": weight, "lte": weight}
+
+        print(f"✔ Matched WEIGHT → {weight} grams")
+
+        query = query.replace(gram_match.group(0), "")
+    
+    # under weight
+    under_match = re.search(r'(under|below)\s*(\d+)\s*(g|gram|grams)', query_lower)
+
+    if under_match:
+
+        weight = int(under_match.group(2))
+
+        filters["weight_range"] = {"lte": weight}
+
+        print(f"✔ Matched WEIGHT → <= {weight}g")
+
+        query = query.replace(under_match.group(0), "")
+
+    # above weight
+    above_match = re.search(r'(above|over)\s*(\d+)\s*(g|gram|grams)', query_lower)
+
+    if above_match:
+
+        weight = int(above_match.group(2))
+
+        filters["weight_range"] = {"gte": weight}
+
+        print(f"✔ Matched WEIGHT → >= {weight}g")
+
+        query = query.replace(above_match.group(0), "")
+
+    # ------------------------------------------------
+    # STEP 4 — LOAD CATALOG ENTITIES
     # ------------------------------------------------
 
     if CATALOG_ENTITIES is None:
@@ -89,17 +195,23 @@ def extract_intent(query):
         print(CATALOG_ENTITIES)
 
     # ------------------------------------------------
-    # STEP 4 — TOKENIZATION
+    # STEP 5 — TOKENIZATION
     # ------------------------------------------------
 
     print("\n[STEP 3] TOKENIZATION")
 
-    tokens = query.lower().split()
+    # Stop words for search
+    STOP_WORDS = {"under", "below", "above", "over", "with", "of","for","without"}
 
-    print("Tokens:", tokens)
+    tokens = [
+        token for token in query.lower().split()
+        if token not in STOP_WORDS
+    ]
+
+    print("Tokens after stop-word removal:", tokens)
 
     # ------------------------------------------------
-    # STEP 5 — TOKEN PROCESSING
+    # STEP 6 — TOKEN PROCESSING
     # ------------------------------------------------
 
     print("\n[STEP 4] TOKEN PROCESSING")
@@ -166,7 +278,7 @@ def extract_intent(query):
             search_terms.append(token)
 
     # ------------------------------------------------
-    # STEP 6 — FINAL SEARCH TEXT
+    # STEP 7 — FINAL SEARCH TEXT
     # ------------------------------------------------
 
     search_text = " ".join(search_terms)
