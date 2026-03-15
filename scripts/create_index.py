@@ -80,6 +80,7 @@ mapping = {
    "metal": {"type": "keyword"},
    "purity": {"type": "keyword"},
    "gender": {"type": "keyword"},
+   "coated_with": {"type": "text","analyzer":"standard"},
    "stone_type": {"type": "keyword"},
    "metal_colour": {"type": "keyword"},
    "layers": {"type": "keyword"},

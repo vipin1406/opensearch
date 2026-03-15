@@ -35,6 +35,7 @@ GENDER_MAP = {
     "gents": "man",
     "boys": "man",
     "men":"man",
+    "man":"man",
 
     "womens": "woman",
     "women": "woman",
@@ -44,6 +45,7 @@ GENDER_MAP = {
     "ladies": "woman",
     "womans":"woman",
     "ladis":"woman",
+    "woman":"woman",
 
     "unisex":"unisex",
 

@@ -61,6 +61,7 @@ def build_search_query(search_text, filters=None):
                             "fields": [
                                 "product_name^4",
                                 "product_name.synonym^3",
+                                "coated_with^3",
                                 "motifs"
                             ],
                             "minimum_should_match": "75%"
@@ -75,6 +76,7 @@ def build_search_query(search_text, filters=None):
                             "query": search_text,
                             "fields": [
                                 "product_name^2",
+                                "coated_with^3",
                                 "motifs"
                             ],
                             "fuzziness": "AUTO"

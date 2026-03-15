@@ -28,6 +28,8 @@ actions = []
 
 for _, row in df.iterrows():
 
+    
+
     doc = row.to_dict()
 
     actions.append({

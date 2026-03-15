@@ -3,7 +3,6 @@ from metaphone import doublemetaphone
 from app.search.entity_loader import load_catalog_entities
 import re
 from app.search.config import PURITY_MAP,GENDER_MAP
-from app.search.phrase_utils import detect_phrases
 CATALOG_ENTITIES = None
 
 
@@ -124,6 +123,7 @@ def extract_intent(query):
             continue
 
         for field, values in CATALOG_ENTITIES.items():
+            print("Checking field:", field)
 
             # -------- EXACT MATCH --------
             if token in values:
