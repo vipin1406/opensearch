@@ -7,7 +7,6 @@ def build_search_query(search_text, filters=None):
     print("QUERY BUILDER STARTED")
     print("================================================")
 
-    # -------- Initialize Filters --------
     if filters is None:
         filters = {}
 
@@ -15,7 +14,7 @@ def build_search_query(search_text, filters=None):
     print("Incoming Filters →", filters)
 
     body = {
-        "size":100,
+        "size": 100,
         "query": {
             "bool": {
                 "must": [],
@@ -25,36 +24,17 @@ def build_search_query(search_text, filters=None):
     }
 
     # ------------------------------------------------
-    # STEP 1 — BUILD TEXT SEARCH CLAUSES
+    # STEP 1 — TEXT SEARCH
     # ------------------------------------------------
     if search_text:
 
-        print("\n[STEP 1] BUILDING SEARCH CLAUSES")
-        print("Search strategy:")
-        print(" 1️⃣ Exact phrase boost")
-        print(" 2️⃣ Cross-field semantic match")
-        print(" 3️⃣ Fuzzy fallback for typos")
-        print(" 4️⃣ Phonetic fallback for sound similarity")
+        print("\n[STEP 1] TEXT SEARCH")
 
         search_clause = {
             "dis_max": {
                 "queries": [
 
-                    # -----------------------------------
-                    # Exact phrase boost
-                    # -----------------------------------
-                    {
-                        "match_phrase": {
-                            "product_name": {
-                                "query": search_text,
-                                "boost": 6
-                            }
-                        }
-                    },
-
-                    # -----------------------------------
-                    # Cross field match
-                    # -----------------------------------
+                    # CROSS FIELD SEARCH
                     {
                         "multi_match": {
                             "query": search_text,
@@ -62,107 +42,112 @@ def build_search_query(search_text, filters=None):
                             "fields": [
                                 "product_name^4",
                                 "product_name.synonym^3",
-                                "coated_with^3",
+                                "coated_with^2",
                                 "motifs"
                             ],
                             "minimum_should_match": "75%"
                         }
                     },
 
-                    # -----------------------------------
-                    # Fuzzy fallback
-                    # -----------------------------------
+                    # FUZZY SEARCH
                     {
                         "multi_match": {
                             "query": search_text,
+                            "type": "best_fields",
                             "fields": [
                                 "product_name^2",
-                                "coated_with^3",
+                                "coated_with^2",
                                 "motifs"
                             ],
                             "fuzziness": "AUTO"
                         }
                     },
 
-                    # -----------------------------------
-                    # Phonetic fallback
-                    # -----------------------------------
+                    # PHONETIC SEARCH
                     {
                         "match": {
                             "product_name.phonetic": {
                                 "query": search_text,
-                                "boost": 2
+                                "boost": 3
                             }
                         }
                     }
 
                 ],
-
-                # Helps combine scores from different queries
                 "tie_breaker": 0.3
             }
         }
 
         body["query"]["bool"]["must"].append(search_clause)
 
-        print("\n✔ Search clause successfully added.")
+        print("✔ Text search added")
 
     else:
-
-        print("\n[STEP 1] No search text provided.")
-        print("✔ Only filters will be applied.")
+        print("\n[STEP 1] No search text")
 
     # ------------------------------------------------
     # STEP 2 — APPLY FILTERS
     # ------------------------------------------------
-    if filters:
+    print("\n[STEP 2] APPLYING FILTERS")
 
-        print("\n[STEP 2] APPLYING FILTERS")
+    for key, value in filters.items():
 
-        for key, value in filters.items():
+        print(f"\nProcessing Filter → {key}: {value}")
 
-            print(f"\nProcessing Filter → {key}: {value}")
+        # WEIGHT RANGE FILTER
+        if key == "weight_range":
 
-            # -------- WEIGHT RANGE FILTER --------
-            if key == "weight_range":
+            body["query"]["bool"]["filter"].append({
+                "range": {
+                    "weight": value
+                }
+            })
 
-                filter_clause = {
-                    "range": {
-                        "weight": value
+            print("✔ Weight range filter applied")
+
+        # LAYERS RANGE FILTER
+        elif key == "layers_range":
+
+            body["query"]["bool"]["filter"].append({
+                "range": {
+                    "layers": {
+                        "gte": value
                     }
                 }
+            })
 
-                body["query"]["bool"]["filter"].append(filter_clause)
+            print("✔ Layers range filter applied")
 
-                print(" ✔ Weight range filter applied")
+        # WEIGHT TARGET SORTING
+        elif key == "weight_value":
 
-            # -------- LAYERS RANGE FILTER --------
-            elif key == "layers_range":
+            print("✔ Weight target stored for ranking")
 
-                filter_clause = {
-                    "range": {
-                        "layers": {
-                            "gte": value
-                        }
+            body["sort"] = [
+                {
+                    "_script": {
+                        "type": "number",
+                        "script": {
+                            "source": "Math.abs(doc['weight'].value - params.target)",
+                            "params": {
+                                "target": value
+                            }
+                        },
+                        "order": "asc"
                     }
                 }
+            ]
 
-                body["query"]["bool"]["filter"].append(filter_clause)
+        # NORMAL TERM FILTER
+        else:
 
-                print(f" ✔ Range Filter applied → layers >= {value}")
+            body["query"]["bool"]["filter"].append({
+                "term": {
+                    key: value
+                }
+            })
 
-            # -------- NORMAL TERM FILTER --------
-            else:
-
-                filter_clause = {"term": {key: value}}
-
-                body["query"]["bool"]["filter"].append(filter_clause)
-
-                print(f" ✔ Filter applied → {key} = {value}")
-
-    else:
-
-        print("\n[STEP 2] No filters detected.")
+            print(f"✔ Term filter → {key} = {value}")
 
     # ------------------------------------------------
     # STEP 3 — FINAL QUERY DEBUG
