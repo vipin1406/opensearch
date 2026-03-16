@@ -11,6 +11,8 @@ client = OpenSearch(
 
 def calculate_weight_tolerance(weight):
 
+    print("\n[WEIGHT] Calculating tolerance")
+
     if weight < 10:
         return 1
     elif weight < 30:
@@ -23,9 +25,12 @@ def calculate_weight_tolerance(weight):
 
 def apply_weight_range(filters):
 
+    print("\n[WEIGHT] Applying weight range logic")
+
     filters = filters.copy()
 
     if "weight_value" not in filters:
+        print("[WEIGHT] No weight_value found")
         return filters
 
     weight = filters["weight_value"]
@@ -39,44 +44,45 @@ def apply_weight_range(filters):
 
     del filters["weight_value"]
 
-    print("Weight Range:", filters["weight_range"])
+    print("[WEIGHT] Weight Range:", filters["weight_range"])
 
     return filters
 
 
 def detect_conflicting_filter(search_text, filters):
 
-    print("\nDetecting conflicting filter")
+    print("\n[RELAXATION] Detecting conflicting filter")
 
     PROTECTED_FILTERS = {"product_type"}
 
     for key in list(filters.keys()):
 
-        # Do not remove protected filters
         if key in PROTECTED_FILTERS:
-            print(f"Skipping protected filter → {key}")
+            print(f"[RELAXATION] Skipping protected filter → {key}")
             continue
 
         test_filters = filters.copy()
         del test_filters[key]
 
-        print(f"Testing without filter → {key}")
+        print(f"[RELAXATION] Testing without filter → {key}")
 
         query_body = build_search_query(search_text, test_filters)
 
         try:
             response = client.search(index=INDEX_NAME, body=query_body)
         except Exception as e:
-            print("Search error:", e)
+            print("[RELAXATION] Search error:", e)
             continue
 
         hits = response["hits"]["hits"]
 
+        print(f"[RELAXATION] Results without {key}: {len(hits)}")
+
         if hits:
-            print(f"Conflicting filter detected → {key}")
+            print(f"[RELAXATION] Conflicting filter detected → {key}")
             return key
 
-    print("No removable conflicting filter found")
+    print("[RELAXATION] No removable conflicting filter found")
 
     return None
 
@@ -87,76 +93,98 @@ def search_products(query):
     print("SEARCH SERVICE STARTED")
     print("================================================")
 
+    print("\n[INPUT] Query:", query)
+
+    # ------------------------------------------------
+    # STEP 1 — INTENT EXTRACTION
+    # ------------------------------------------------
+
     search_text, filters = extract_intent(query)
+
+    print("\n[INTENT RESULT]")
+    print("Search Text:", search_text)
+    print("Filters:", filters)
+
+    # ------------------------------------------------
+    # STEP 2 — APPLY WEIGHT RANGE
+    # ------------------------------------------------
 
     filters = apply_weight_range(filters)
 
+    print("\n[FILTERS AFTER WEIGHT LOGIC]")
+    print(filters)
+
+    # ------------------------------------------------
+    # STEP 3 — BUILD QUERY
+    # ------------------------------------------------
+
     query_body = build_search_query(search_text, filters)
 
-    print("\nExecuting search")
+    print("\n[SEARCH] Executing initial search")
 
     try:
         response = client.search(index=INDEX_NAME, body=query_body)
     except Exception as e:
-        print("Search error:", e)
+        print("[ERROR] Search failed:", e)
         return []
 
     hits = response["hits"]["hits"]
 
-    print("Results:", len(hits))
+    print("[SEARCH] Initial results:", len(hits))
 
-    # -----------------------------------------
-    # DETECT CONFLICTING FILTER
-    # -----------------------------------------
+    # ------------------------------------------------
+    # STEP 4 — FILTER RELAXATION
+    # ------------------------------------------------
 
     if len(hits) == 0 and filters:
 
-        print("\nZero results → detecting conflicting filter")
+        print("\n[RELAXATION] Zero results → detecting conflicting filter")
 
         conflicting_filter = detect_conflicting_filter(search_text, filters)
 
         if conflicting_filter:
 
-            print("Removing filter:", conflicting_filter)
+            print("[RELAXATION] Removing filter:", conflicting_filter)
 
             del filters[conflicting_filter]
 
             query_body = build_search_query(search_text, filters)
 
+            print("[RELAXATION] Re-running search after removing filter")
+
             response = client.search(index=INDEX_NAME, body=query_body)
 
             hits = response["hits"]["hits"]
 
-            print("Results after relaxation:", len(hits))
+            print("[RELAXATION] Results after relaxation:", len(hits))
 
-    # -----------------------------------------
-    # FINAL TEXT FALLBACK
-    # -----------------------------------------
+    # ------------------------------------------------
+    # STEP 5 — PRODUCT TYPE FALLBACK
+    # ------------------------------------------------
 
-    if len(hits) == 0:
+    if len(hits) == 0 and "product_type" in filters:
 
-        print("\nFinal fallback → text search only")
+        print("\n[FALLBACK] Product type fallback activated")
 
         product_filter = {
-        "product_type": filters["product_type"]
-    }
+            "product_type": filters["product_type"]
+        }
 
-
-        query_body = build_search_query("",product_filter)
+        query_body = build_search_query("", product_filter)
 
         response = client.search(index=INDEX_NAME, body=query_body)
 
         hits = response["hits"]["hits"]
 
-        print("Fallback results:", len(hits))
+        print("[FALLBACK] Product type fallback results:", len(hits))
 
-    # -----------------------------------------
-    # NOTHING MATCHED FALLBACK
-    # -----------------------------------------
+    # ------------------------------------------------
+    # STEP 6 — POPULAR PRODUCTS FALLBACK
+    # ------------------------------------------------
 
     if len(hits) == 0:
 
-        print("\nNothing matched → returning popular products")
+        print("\n[FALLBACK] Nothing matched → returning popular products")
 
         query_body = {
             "size": 20,
@@ -169,10 +197,18 @@ def search_products(query):
 
         hits = response["hits"]["hits"]
 
-        print("Popular products returned:", len(hits))
+        print("[FALLBACK] Popular products returned:", len(hits))
+
+    # ------------------------------------------------
+    # STEP 7 — FINAL RESULTS
+    # ------------------------------------------------
 
     results = [hit["_source"] for hit in hits]
 
-    print("\nSEARCH FINISHED\n")
+    print("\n[FINAL RESULT COUNT]", len(results))
+
+    print("\n================================================")
+    print("SEARCH SERVICE FINISHED")
+    print("================================================\n")
 
     return results

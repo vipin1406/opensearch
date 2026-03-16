@@ -39,6 +39,7 @@ def extract_intent(query):
 
     filters = {}
     search_terms = []
+    product_type_locked = False
 
     query = query.lower()
 
@@ -140,6 +141,64 @@ def extract_intent(query):
 
         CATALOG_ENTITIES = load_catalog_entities()
 
+    
+    # ------------------------------------------------
+    # PRODUCT TYPE PHRASE DETECTION
+    # ------------------------------------------------
+
+    print("\n[STEP X] PRODUCT TYPE PHRASE DETECTION")
+
+    if CATALOG_ENTITIES and "product_type" in CATALOG_ENTITIES:
+
+        product_types = sorted(
+            CATALOG_ENTITIES["product_type"],
+            key=len,
+            reverse=True
+        )
+
+        for ptype in product_types:
+
+            # detect multi-word product types
+            if " " in ptype and ptype in query:
+
+                filters["product_type"] = ptype
+                product_type_locked = True
+                print("✔ Product type phrase match →", ptype)
+
+                query = query.replace(ptype, "")
+                break
+
+    # ------------------------------------------------
+    # FUZZY PRODUCT TYPE PHRASE DETECTION
+    # ------------------------------------------------
+
+    print("\n[STEP X] FUZZY PRODUCT TYPE PHRASE DETECTION")
+
+    if "product_type" in CATALOG_ENTITIES and "product_type" not in filters:
+
+        product_types = CATALOG_ENTITIES["product_type"]
+
+        words = query.split()
+
+        phrases = []
+
+        for i in range(len(words) - 1):
+            phrases.append(words[i] + " " + words[i+1])
+
+        for phrase in phrases:
+
+            match = get_close_matches(phrase, product_types, n=1, cutoff=0.8)
+
+            if match:
+
+                filters["product_type"] = match[0]
+
+                print("✔ Fuzzy product type match →", match[0])
+
+                query = query.replace(phrase, "")
+
+                break
+
     # ------------------------------------------------
     # TOKENIZATION
     # ------------------------------------------------
@@ -178,6 +237,9 @@ def extract_intent(query):
             continue
 
         for field, values in CATALOG_ENTITIES.items():
+             # prevent overwriting phrase-detected product_type
+            if field == "product_type" and product_type_locked:
+                continue
 
             if token in values:
 
