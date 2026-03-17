@@ -2,7 +2,7 @@ from difflib import get_close_matches
 from metaphone import doublemetaphone
 from app.search.entity_loader import load_catalog_entities
 import re
-from app.search.config import PURITY_MAP, GENDER_MAP
+from app.search.config import PURITY_MAP, GENDER_MAP, USAGE_MAP,NUMERIC_FIELDS
 
 CATALOG_ENTITIES = None
 
@@ -12,9 +12,15 @@ def phonetic_code(word):
 
 
 def fuzzy_match(token, values):
-    match = get_close_matches(token, values, n=1, cutoff=0.8)
+
+    # ensure all values are strings
+    values = [str(v) for v in values]
+
+    match = get_close_matches(token, values, n=1, cutoff=0.7)
+
     return match[0] if match else None
 
+    
 
 def phonetic_match(token, values):
 
@@ -40,6 +46,9 @@ def extract_intent(query):
     filters = {}
     search_terms = []
     product_type_locked = False
+
+    mugappu_detected = False
+    mugappu_count = None
 
     query = query.lower()
 
@@ -119,9 +128,9 @@ def extract_intent(query):
 
         query = query.replace(sovereign_match.group(0), "")
 
-    elif re.search(r'(\d+)\s*(g|gram|grams)', query):
+    elif re.search(r'(\d+)\s*(grams|gram|gm|grms|grm|graam|g)', query):
 
-        gram_match = re.search(r'(\d+)\s*(g|gram|grams)', query)
+        gram_match = re.search(r'(\d+)\s*(grams|gram|gm|grms|grm|graam|g)', query)
 
         weight = int(gram_match.group(1))
 
@@ -129,7 +138,8 @@ def extract_intent(query):
 
         print("✔ Target Weight →", weight)
 
-        query = query.replace(gram_match.group(0), "")
+        # 🔥 IMPORTANT FIX → remove safely using regex
+        query = re.sub(r'(\d+)\s*(gm|g|gram|grams|graam|grm|grms)', '', query)
 
     # ------------------------------------------------
     # LOAD ENTITIES
@@ -140,6 +150,30 @@ def extract_intent(query):
         print("\n[STEP 4] Loading catalog entities")
 
         CATALOG_ENTITIES = load_catalog_entities()
+
+    # ------------------------------------------------
+    # STEP 4B — MUGAPPU DETECTION
+    # ------------------------------------------------
+
+    print("\n[STEP 4B] MUGAPPU DETECTION")
+
+    mugappu_match = re.search(r'(\d+)\s*mugappu', query)
+
+    if mugappu_match:
+
+        mugappu_count = int(mugappu_match.group(1))
+
+        print("✔ Mugappu count detected →", mugappu_count)
+
+        query = query.replace(mugappu_match.group(0), "")
+
+    elif "mugappu" in query:
+
+        mugappu_detected = True
+
+        print("✔ Mugappu keyword detected")
+
+        query = query.replace("mugappu", "").strip()
 
     
     # ------------------------------------------------
@@ -187,7 +221,7 @@ def extract_intent(query):
 
         for phrase in phrases:
 
-            match = get_close_matches(phrase, product_types, n=1, cutoff=0.8)
+            match = get_close_matches(phrase, product_types, n=1, cutoff=0.7)
 
             if match:
 
@@ -205,7 +239,10 @@ def extract_intent(query):
 
     STOP_WORDS = {"under","below","above","over","with","of","for","in","on","and"}
 
-    tokens = [t for t in query.split() if t not in STOP_WORDS]
+    tokens = [
+    t for t in query.split()
+    if t not in STOP_WORDS and (len(t) > 1 or t in {"cz", "ad"})
+]
 
     print("\n[STEP 5] Tokens:", tokens)
 
@@ -218,6 +255,46 @@ def extract_intent(query):
         print("\nProcessing:", token)
 
         matched = False
+        
+
+       
+        # -----------------------------------------
+        # USAGE HELPER WORD SKIP
+        # -----------------------------------------
+
+        USAGE_STOP_WORDS = {"usage", "use", "wear"}
+
+        if token in USAGE_STOP_WORDS:
+            print("Skipping usage helper word:", token)
+            matched = True
+            continue
+
+      
+
+        # -----------------------------------------
+        # USAGE INTENT DETECTION
+        # -----------------------------------------
+
+        # Exact match
+        if token in USAGE_MAP:
+
+            filters["usages"] = USAGE_MAP[token]
+
+            print("✔ Usage intent detected →", filters["usages"])
+
+            continue
+
+
+        # Fuzzy match for misspellings
+        usage_fuzzy = fuzzy_match(token, list(USAGE_MAP.keys()))
+
+        if usage_fuzzy:
+
+            filters["usages"] = USAGE_MAP[usage_fuzzy]
+
+            print("✔ Fuzzy usage match →", filters["usages"])
+
+            continue
 
         # ------------------------------------------------
         # LAYER KEYWORD DETECTION
@@ -237,7 +314,18 @@ def extract_intent(query):
             continue
 
         for field, values in CATALOG_ENTITIES.items():
-             # prevent overwriting phrase-detected product_type
+
+            # -----------------------------------------
+            # SKIP NUMERIC FIELDS (CONFIG DRIVEN)
+            # -----------------------------------------
+            if field in NUMERIC_FIELDS:
+                print(f"Skipping numeric field → {field}")
+                continue
+
+            # prevent overwriting phrase-detected product_type
+            if field == "product_type" and product_type_locked:
+                continue
+                    # prevent overwriting phrase-detected product_type
             if field == "product_type" and product_type_locked:
                 continue
 
@@ -268,6 +356,38 @@ def extract_intent(query):
 
         if not matched:
             search_terms.append(token)
+    # ------------------------------------------------
+    # FINAL MUGAPPU LOGIC
+    # ------------------------------------------------
+
+    if mugappu_count is not None:
+
+        if "product_type" in filters:
+
+            filters["no_of_mugappu"] = mugappu_count
+
+            print("✔ Mugappu count filter applied →", mugappu_count)
+
+        else:
+
+            filters["product_type"] = "mugappu"
+
+            print("✔ Mugappu treated as product type")
+
+
+    elif mugappu_detected:
+
+        if "product_type" in filters:
+
+            search_terms.append("mugappu")
+
+            print("✔ Mugappu treated as search text")
+
+        else:
+
+            filters["product_type"] = "mugappu"
+
+            print("✔ Mugappu treated as product type")
 
     search_text = " ".join(search_terms)
 

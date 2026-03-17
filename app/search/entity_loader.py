@@ -59,6 +59,13 @@ def load_catalog_entities():
                         "field": "usages",
                         "size": 100
                     }
+                },
+
+                "no_of_mugappu": {
+                    "terms": {
+                        "field": "no_of_mugappu",
+                        "size": 20
+                    }
                 }
 
             }
@@ -89,6 +96,10 @@ def load_catalog_entities():
 
         "usages": [
             b["key"] for b in response["aggregations"]["usages"]["buckets"]
+        ],
+
+        "no_of_mugappu": [
+            b["key"] for b in response["aggregations"]["no_of_mugappu"]["buckets"]
         ]
 
     }

@@ -86,7 +86,7 @@ mapping = {
    "layers": {"type": "integer"},
    "pendant": {"type": "keyword"},
    "religion": {"type": "keyword"},
-   "no_of_mugappu": {"type": "keyword"},
+   "no_of_mugappu": {"type": "integer"},
    "usages": {"type": "keyword"},
    "weight": {"type": "float"},
     "motifs": {

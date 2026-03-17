@@ -55,3 +55,26 @@ GENDER_MAP = {
     "child": "baby",
     "children": "baby",
 }
+
+USAGE_MAP = {
+
+    "daily": "daily wear",
+    "office": "daily wear",
+    "lightweight": "daily wear",
+
+    "party": "cocktail and party wear",
+    "cocktail": "cocktail and party wear",
+
+    "festival": "festive wear",
+    "festive": "festive wear",
+
+    "wedding": "bridal wear",
+    "bridal": "bridal wear"
+
+}
+
+NUMERIC_FIELDS = {
+    "no_of_mugappu",
+    "weight",
+    "layers"
+}
