@@ -2,7 +2,7 @@ from difflib import get_close_matches
 from metaphone import doublemetaphone
 from app.search.entity_loader import load_catalog_entities
 import re
-from app.search.config import PURITY_MAP, GENDER_MAP, USAGE_MAP,NUMERIC_FIELDS
+from app.search.config import PURITY_MAP, GENDER_MAP, USAGE_MAP, NUMERIC_FIELDS
 
 CATALOG_ENTITIES = None
 
@@ -12,24 +12,16 @@ def phonetic_code(word):
 
 
 def fuzzy_match(token, values):
-
-    # ensure all values are strings
     values = [str(v) for v in values]
-
     match = get_close_matches(token, values, n=1, cutoff=0.7)
-
     return match[0] if match else None
 
-    
 
 def phonetic_match(token, values):
-
     token_ph = phonetic_code(token)
-
     for value in values:
-        if phonetic_code(value) == token_ph:
+        if phonetic_code(str(value)) == token_ph:
             return value
-
     return None
 
 
@@ -46,6 +38,7 @@ def extract_intent(query):
     filters = {}
     search_terms = []
     product_type_locked = False
+    detected_product_types = []
 
     mugappu_detected = False
     mugappu_count = None
@@ -53,17 +46,14 @@ def extract_intent(query):
     query = query.lower()
 
     # ------------------------------------------------
-    # PURITY DETECTION
+    # STEP 1 — PURITY DETECTION
     # ------------------------------------------------
-
     print("\n[STEP 1] PURITY DETECTION")
 
     purity_pattern = r"(22\s?k|22\s?kt|916|18\s?k|750|14\s?k|585)"
-
     match = re.search(purity_pattern, query)
 
     if match:
-
         purity_raw = match.group(0).replace(" ", "")
         purity = PURITY_MAP.get(purity_raw)
 
@@ -72,22 +62,18 @@ def extract_intent(query):
             print("✔ Matched PURITY →", purity)
 
         query = query.replace(match.group(0), "")
-
     else:
         print("No purity detected")
 
     # ------------------------------------------------
-    # LAYER DETECTION
+    # STEP 2 — LAYER DETECTION
     # ------------------------------------------------
-
     print("\n[STEP 2] LAYER DETECTION")
 
     layer_pattern = r"(\d+)\s*layer"
-
     match = re.search(layer_pattern, query)
 
     if match:
-
         layer_value = int(match.group(1))
 
         if layer_value >= 4:
@@ -100,28 +86,23 @@ def extract_intent(query):
         query = query.replace(match.group(0), "")
 
     # ------------------------------------------------
-    # WEIGHT DETECTION
+    # STEP 3 — WEIGHT DETECTION
     # ------------------------------------------------
-
     print("\n[STEP 3] WEIGHT DETECTION")
 
     sovereign_match = re.search(r'(under|below|above|over)?\s*(\d+)\s*sovereign', query)
 
     if sovereign_match:
-
         condition = sovereign_match.group(1)
         sovereign = int(sovereign_match.group(2))
-
         grams = sovereign * 8
 
         if condition in ["under", "below"]:
             filters["weight_range"] = {"lte": grams}
             print("✔ Weight ≤", grams)
-
         elif condition in ["above", "over"]:
             filters["weight_range"] = {"gte": grams}
             print("✔ Weight ≥", grams)
-
         else:
             filters["weight_value"] = grams
             print("✔ Target Weight", grams)
@@ -129,183 +110,98 @@ def extract_intent(query):
         query = query.replace(sovereign_match.group(0), "")
 
     elif re.search(r'(\d+)\s*(grams|gram|gm|grms|grm|graam|g)', query):
-
         gram_match = re.search(r'(\d+)\s*(grams|gram|gm|grms|grm|graam|g)', query)
-
         weight = int(gram_match.group(1))
 
         filters["weight_value"] = weight
-
         print("✔ Target Weight →", weight)
 
-        # 🔥 IMPORTANT FIX → remove safely using regex
         query = re.sub(r'(\d+)\s*(gm|g|gram|grams|graam|grm|grms)', '', query)
 
     # ------------------------------------------------
-    # LOAD ENTITIES
+    # STEP 4 — LOAD ENTITIES
     # ------------------------------------------------
-
     if CATALOG_ENTITIES is None:
-
         print("\n[STEP 4] Loading catalog entities")
-
         CATALOG_ENTITIES = load_catalog_entities()
 
     # ------------------------------------------------
-    # STEP 4B — MUGAPPU DETECTION
+    # STEP 4B — MUGAPPU DETECTION (FUZZY + PHONETIC)
     # ------------------------------------------------
-
     print("\n[STEP 4B] MUGAPPU DETECTION")
 
-    mugappu_match = re.search(r'(\d+)\s*mugappu', query)
+    words = query.split()
 
-    if mugappu_match:
+    for i, word in enumerate(words):
 
-        mugappu_count = int(mugappu_match.group(1))
+        # 🔹 CHECK COUNT (number before word)
+        if i > 0 and words[i - 1].isdigit():
 
-        print("✔ Mugappu count detected →", mugappu_count)
+            fuzzy = fuzzy_match(word, ["mugappu"])
+            phonetic = phonetic_match(word, ["mugappu"])
 
-        query = query.replace(mugappu_match.group(0), "")
+            if fuzzy or phonetic:
+                mugappu_count = int(words[i - 1])
+                mugappu_detected = True
 
-    elif "mugappu" in query:
+                print(f"✔ Mugappu count detected (fuzzy/phonetic) → {mugappu_count}")
 
-        mugappu_detected = True
+                # remove both number + word
+                query = query.replace(words[i - 1], "")
+                query = query.replace(word, "")
+                continue
 
-        print("✔ Mugappu keyword detected")
+        # 🔹 NORMAL DETECTION
+        fuzzy = fuzzy_match(word, ["mugappu"])
+        phonetic = phonetic_match(word, ["mugappu"])
 
-        query = query.replace("mugappu", "").strip()
+        if fuzzy or phonetic:
+            mugappu_detected = True
+            print(f"✔ Mugappu detected (fuzzy/phonetic) → {word}")
 
-    
-    # ------------------------------------------------
-    # PRODUCT TYPE PHRASE DETECTION
-    # ------------------------------------------------
+            query = query.replace(word, "")
 
-    print("\n[STEP X] PRODUCT TYPE PHRASE DETECTION")
-
-    if CATALOG_ENTITIES and "product_type" in CATALOG_ENTITIES:
-
-        product_types = sorted(
-            CATALOG_ENTITIES["product_type"],
-            key=len,
-            reverse=True
-        )
-
-        for ptype in product_types:
-
-            # detect multi-word product types
-            if " " in ptype and ptype in query:
-
-                filters["product_type"] = ptype
-                product_type_locked = True
-                print("✔ Product type phrase match →", ptype)
-
-                query = query.replace(ptype, "")
-                break
+    print("[DEBUG] Query after mugappu cleanup →", query.strip())
 
     # ------------------------------------------------
-    # FUZZY PRODUCT TYPE PHRASE DETECTION
+    # STEP 5 — TOKENIZATION
     # ------------------------------------------------
-
-    print("\n[STEP X] FUZZY PRODUCT TYPE PHRASE DETECTION")
-
-    if "product_type" in CATALOG_ENTITIES and "product_type" not in filters:
-
-        product_types = CATALOG_ENTITIES["product_type"]
-
-        words = query.split()
-
-        phrases = []
-
-        for i in range(len(words) - 1):
-            phrases.append(words[i] + " " + words[i+1])
-
-        for phrase in phrases:
-
-            match = get_close_matches(phrase, product_types, n=1, cutoff=0.7)
-
-            if match:
-
-                filters["product_type"] = match[0]
-
-                print("✔ Fuzzy product type match →", match[0])
-
-                query = query.replace(phrase, "")
-
-                break
-
-    # ------------------------------------------------
-    # TOKENIZATION
-    # ------------------------------------------------
-
     STOP_WORDS = {"under","below","above","over","with","of","for","in","on","and"}
 
     tokens = [
-    t for t in query.split()
-    if t not in STOP_WORDS and (len(t) > 1 or t in {"cz", "ad"})
-]
+        t for t in query.split()
+        if t not in STOP_WORDS and (len(t) > 1 or t in {"cz", "ad"})
+    ]
 
     print("\n[STEP 5] Tokens:", tokens)
 
     # ------------------------------------------------
-    # TOKEN PROCESSING
+    # STEP 6 — TOKEN PROCESSING
     # ------------------------------------------------
-
     for token in tokens:
 
         print("\nProcessing:", token)
 
         matched = False
-        
 
-       
-        # -----------------------------------------
-        # USAGE HELPER WORD SKIP
-        # -----------------------------------------
-
-        USAGE_STOP_WORDS = {"usage", "use", "wear"}
-
-        if token in USAGE_STOP_WORDS:
+        if token in {"usage", "use", "wear"}:
             print("Skipping usage helper word:", token)
-            matched = True
             continue
 
-      
-
-        # -----------------------------------------
-        # USAGE INTENT DETECTION
-        # -----------------------------------------
-
-        # Exact match
         if token in USAGE_MAP:
-
             filters["usages"] = USAGE_MAP[token]
-
-            print("✔ Usage intent detected →", filters["usages"])
-
+            print("✔ Usage intent →", filters["usages"])
             continue
 
-
-        # Fuzzy match for misspellings
         usage_fuzzy = fuzzy_match(token, list(USAGE_MAP.keys()))
-
         if usage_fuzzy:
-
             filters["usages"] = USAGE_MAP[usage_fuzzy]
-
-            print("✔ Fuzzy usage match →", filters["usages"])
-
+            print("✔ Fuzzy usage →", filters["usages"])
             continue
-
-        # ------------------------------------------------
-        # LAYER KEYWORD DETECTION
-        # ------------------------------------------------
 
         if token in {"layer", "layers"}:
-
-            if "layers" not in filters and "layers_range" not in filters:
-                filters["layers_range"] = 2
-                print("✔ Layer keyword detected → layers >= 2")
-
+            filters["layers_range"] = 2
+            print("✔ Layer keyword detected")
             continue
 
         if token in GENDER_MAP:
@@ -315,79 +211,91 @@ def extract_intent(query):
 
         for field, values in CATALOG_ENTITIES.items():
 
-            # -----------------------------------------
-            # SKIP NUMERIC FIELDS (CONFIG DRIVEN)
-            # -----------------------------------------
             if field in NUMERIC_FIELDS:
-                print(f"Skipping numeric field → {field}")
                 continue
 
-            # prevent overwriting phrase-detected product_type
-            if field == "product_type" and product_type_locked:
-                continue
-                    # prevent overwriting phrase-detected product_type
             if field == "product_type" and product_type_locked:
                 continue
 
+            # EXACT
             if token in values:
+                if field == "product_type":
+                    detected_product_types.append(token)
+                    print("✔ Detected product_type →", token)
+                else:
+                    filters[field] = token
+                    print("✔ Exact match", field)
 
-                filters[field] = token
-                print("✔ Exact match", field)
                 matched = True
                 break
 
+            # FUZZY
             fuzzy = fuzzy_match(token, values)
-
             if fuzzy:
+                if field == "product_type":
+                    detected_product_types.append(fuzzy)
+                    print("✔ Fuzzy product_type →", fuzzy)
+                else:
+                    filters[field] = fuzzy
+                    print("✔ Fuzzy match", field)
 
-                filters[field] = fuzzy
-                print("✔ Fuzzy match", field)
                 matched = True
                 break
 
+            # PHONETIC
             phonetic = phonetic_match(token, values)
-
             if phonetic:
+                if field == "product_type":
+                    detected_product_types.append(phonetic)
+                    print("✔ Phonetic product_type →", phonetic)
+                else:
+                    filters[field] = phonetic
+                    print("✔ Phonetic match", field)
 
-                filters[field] = phonetic
-                print("✔ Phonetic match", field)
                 matched = True
                 break
 
         if not matched:
             search_terms.append(token)
+
     # ------------------------------------------------
-    # FINAL MUGAPPU LOGIC
+    # STEP 7 — FINAL MUGAPPU LOGIC
     # ------------------------------------------------
+    print("\n[STEP 7] FINAL MUGAPPU LOGIC")
 
     if mugappu_count is not None:
-
-        if "product_type" in filters:
-
+        if detected_product_types:
             filters["no_of_mugappu"] = mugappu_count
-
-            print("✔ Mugappu count filter applied →", mugappu_count)
-
+            print("✔ Mugappu count filter →", mugappu_count)
         else:
-
-            filters["product_type"] = "mugappu"
-
-            print("✔ Mugappu treated as product type")
-
+            detected_product_types.append("mugappu")
 
     elif mugappu_detected:
-
-        if "product_type" in filters:
-
+        if detected_product_types:
             search_terms.append("mugappu")
-
-            print("✔ Mugappu treated as search text")
-
+            print("✔ Mugappu as search text")
         else:
+            detected_product_types.append("mugappu")
 
-            filters["product_type"] = "mugappu"
+    # ------------------------------------------------
+    # STEP 8 — FINAL PRODUCT TYPE RESOLUTION
+    # ------------------------------------------------
+    print("\n[STEP 8] PRODUCT TYPE RESOLUTION")
+    print("Detected product types →", detected_product_types)
 
-            print("✔ Mugappu treated as product type")
+    if detected_product_types:
+
+        main_product = detected_product_types[-1]
+        filters["product_type"] = main_product
+
+        print("✔ Final product_type →", main_product)
+
+        for p in detected_product_types[:-1]:
+            search_terms.append(p)
+            print("✔ Added to search_text →", p)
+
+    else:
+        print("No product type detected")
 
     search_text = " ".join(search_terms)
 
