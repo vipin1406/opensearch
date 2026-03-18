@@ -39,6 +39,7 @@ def extract_intent(query):
     search_terms = []
     product_type_locked = False
     detected_product_types = []
+    used_attribute_filters = set()
 
     mugappu_detected = False
     mugappu_count = None
@@ -175,6 +176,90 @@ def extract_intent(query):
 
     print("\n[STEP 5] Tokens:", tokens)
 
+
+    # ------------------------------------------------
+    # STEP 5B — WITH/WITHOUT ATTRIBUTE DETECTION
+    # ------------------------------------------------
+
+    print("\n[STEP 5B] WITH/WITHOUT DETECTION")
+
+    ATTRIBUTE_MAP = {
+        "stone": "stone_type",
+        "pendant": "pendant"
+    }
+
+    words = query.split()
+
+    i = 0
+    while i < len(words):
+
+        word = words[i]
+
+        # -------------------------------
+        # CASE 1: with kemp stone
+        # -------------------------------
+        if word == "with" and i + 2 < len(words):
+
+            mid_word = words[i + 1]
+            next_word = words[i + 2]
+
+            if fuzzy_match(next_word, ["stone"]):
+
+                stone_match = fuzzy_match(mid_word, CATALOG_ENTITIES.get("stone_type", []))
+
+                if stone_match:
+                    filters["stone_type"] = stone_match
+                    used_attribute_filters.add("stone_type")
+                    print(f"✔ Specific stone detected → {stone_match}")
+
+                    query = query.replace(word, "")
+                    query = query.replace(mid_word, "")
+                    query = query.replace(next_word, "")
+
+                    i += 3
+                    continue
+
+        # -------------------------------
+        # CASE 2: with stone / without stone
+        # -------------------------------
+        if word in {"with", "without"} and i + 1 < len(words):
+
+            next_word = words[i + 1]
+
+            attr = fuzzy_match(next_word, ATTRIBUTE_MAP.keys())
+
+            if attr:
+
+                field = ATTRIBUTE_MAP[attr]
+
+                if word == "with":
+                    filters[field] = {"exists": True}
+                    used_attribute_filters.add(field)
+                    print(f"✔ WITH detected → {field} exists")
+
+                else:
+                    filters[field] = {"exists": False}
+                    print(f"✔ WITHOUT detected → {field} missing")
+
+                query = query.replace(word, "")
+                query = query.replace(next_word, "")
+
+                i += 2
+                continue
+
+        i += 1
+
+    print("[DEBUG] Query after attribute cleanup →", query.strip())
+    # 🔥 RE-TOKENIZE AFTER CLEANUP
+    tokens = [
+        t for t in query.split()
+        if t not in STOP_WORDS and (len(t) > 1 or t in {"cz", "ad"})
+]
+
+    print("[STEP 5B] Tokens after cleanup:", tokens)
+
+    
+
     # ------------------------------------------------
     # STEP 6 — TOKEN PROCESSING
     # ------------------------------------------------
@@ -256,6 +341,16 @@ def extract_intent(query):
                 break
 
         if not matched:
+
+            # 🔥 skip ONLY if attribute already used as filter
+            if (
+                token == "stone" and "stone_type" in used_attribute_filters
+            ) or (
+                token == "pendant" and "pendant" in used_attribute_filters
+            ):
+                print(f"⛔ Skipping attribute token (already used as filter) → {token}")
+                continue
+
             search_terms.append(token)
 
     # ------------------------------------------------

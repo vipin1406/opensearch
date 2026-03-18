@@ -139,15 +139,50 @@ def build_search_query(search_text, filters=None):
             ]
 
         # NORMAL TERM FILTER
+        # NORMAL / RANGE / EXISTS FILTER
         else:
 
-            body["query"]["bool"]["filter"].append({
-                "term": {
-                    key: value
-                }
-            })
+            # 🔹 EXISTS FILTER (with / without)
+            if isinstance(value, dict) and "exists" in value:
 
-            print(f"✔ Term filter → {key} = {value}")
+                if value["exists"]:
+                    body["query"]["bool"]["filter"].append({
+                        "exists": {
+                            "field": key
+                        }
+                    })
+                else:
+                    # must_not for "without"
+                    body["query"]["bool"].setdefault("must_not", [])
+                    body["query"]["bool"]["must_not"].append({
+                        "exists": {
+                            "field": key
+                        }
+                    })
+
+                print(f"✔ Exists filter → {key} = {value['exists']}")
+
+            # 🔹 RANGE FILTER (generic fallback)
+            elif isinstance(value, dict):
+
+                body["query"]["bool"]["filter"].append({
+                    "range": {
+                        key: value
+                    }
+                })
+
+                print(f"✔ Range filter → {key} = {value}")
+
+            # 🔹 NORMAL TERM FILTER
+            else:
+
+                body["query"]["bool"]["filter"].append({
+                    "term": {
+                        key: value
+                    }
+                })
+
+                print(f"✔ Term filter → {key} = {value}")
 
     # ------------------------------------------------
     # STEP 3 — FINAL QUERY DEBUG
