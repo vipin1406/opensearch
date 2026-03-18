@@ -1,8 +1,14 @@
-from difflib import get_close_matches
+from difflib import get_close_matches,SequenceMatcher
 from metaphone import doublemetaphone
 from app.search.entity_loader import load_catalog_entities
 import re
 from app.search.config import PURITY_MAP, GENDER_MAP, USAGE_MAP, NUMERIC_FIELDS
+from app.search.normalizer import (
+    normalize_purity,
+    normalize_weight,
+    normalize_weight_range,
+    clean_query
+)
 
 CATALOG_ENTITIES = None
 
@@ -23,6 +29,77 @@ def phonetic_match(token, values):
         if phonetic_code(str(value)) == token_ph:
             return value
     return None
+
+
+def smart_match(token, values):
+
+    print(f"\n[SMART MATCH] Processing token → {token}")
+
+    token = str(token)
+    values = [str(v) for v in values]
+
+    best_match = None
+    best_score = 0
+
+    # ---------------------------------------
+    # 1. EXACT MATCH
+    # ---------------------------------------
+    if token in values:
+        print(f"[SMART MATCH] ✔ EXACT → {token}")
+        return token, 1.0
+
+    # ---------------------------------------
+    # 2. PREFIX MATCH
+    # ---------------------------------------
+    for v in values:
+        if len(token) >= 4 and v.startswith(token[:4]):
+            score = SequenceMatcher(None, token, v).ratio()
+            print(f"[SMART MATCH] ✔ PREFIX → {token} → {v} (score={score:.2f})")
+            return v, score
+
+    # ---------------------------------------
+    # 3. LENGTH FILTER
+    # ---------------------------------------
+    filtered = [
+        v for v in values
+        if abs(len(v) - len(token)) <= 2
+    ]
+
+    print(f"[SMART MATCH] Length-filtered candidates → {filtered[:5]}...")
+
+    # ---------------------------------------
+    # 4. CONTROLLED FUZZY
+    # ---------------------------------------
+    matches = get_close_matches(token, filtered, n=3, cutoff=0.78)
+
+    for m in matches:
+        score = SequenceMatcher(None, token, m).ratio()
+
+        if score > best_score:
+            best_match = m
+            best_score = score
+
+    if best_match:
+        print(f"[SMART MATCH] ✔ FUZZY → {token} → {best_match} (score={best_score:.2f})")
+        return best_match, best_score
+
+    # ---------------------------------------
+    # 5. PHONETIC MATCH
+    # ---------------------------------------
+    token_ph = phonetic_code(token)
+
+    for v in values:
+        if phonetic_code(v) == token_ph:
+            score = 0.75  # fixed confidence
+            print(f"[SMART MATCH] ✔ PHONETIC → {token} → {v} (score={score})")
+            return v, score
+
+    # ---------------------------------------
+    # 6. NO MATCH
+    # ---------------------------------------
+    print(f"[SMART MATCH] ✘ NO MATCH → {token}")
+    return None, 0
+
 
 
 def extract_intent(query):
@@ -51,20 +128,10 @@ def extract_intent(query):
     # ------------------------------------------------
     print("\n[STEP 1] PURITY DETECTION")
 
-    purity_pattern = r"(22\s?k|22\s?kt|916|18\s?k|750|14\s?k|585)"
-    match = re.search(purity_pattern, query)
+    query, purity = normalize_purity(query)
 
-    if match:
-        purity_raw = match.group(0).replace(" ", "")
-        purity = PURITY_MAP.get(purity_raw)
-
-        if purity:
-            filters["purity"] = purity
-            print("✔ Matched PURITY →", purity)
-
-        query = query.replace(match.group(0), "")
-    else:
-        print("No purity detected")
+    if purity:
+        filters["purity"] = purity
 
     # ------------------------------------------------
     # STEP 2 — LAYER DETECTION
@@ -163,6 +230,40 @@ def extract_intent(query):
             query = query.replace(word, "")
 
     print("[DEBUG] Query after mugappu cleanup →", query.strip())
+
+    # ------------------------------------------------
+    # FINAL QUERY CLEANUP
+    # ------------------------------------------------
+    query = clean_query(query)
+    print("[DEBUG] Clean query →", query)
+
+
+    # ------------------------------------------------
+    # STEP 4C — PRODUCT TYPE PHRASE DETECTION (SMART)
+    # ------------------------------------------------
+    print("\n[STEP 4C] PRODUCT TYPE PHRASE DETECTION")
+
+    if "product_type" in CATALOG_ENTITIES:
+
+        words = query.split()
+
+        for i in range(len(words) - 1):
+
+            phrase = words[i] + " " + words[i + 1]
+
+            print(f"[STEP 4C] Checking phrase → {phrase}")
+
+            match, score = smart_match(phrase, CATALOG_ENTITIES["product_type"])
+
+            if match and score >= 0.75:
+                detected_product_types.append(match)
+
+                print(f"✔ Phrase match → {phrase} → {match} (score={score:.2f})")
+
+                # 🔥 REMOVE FULL PHRASE SAFELY
+                query = re.sub(rf'\b{phrase}\b', '', query)
+
+                break
 
     # ------------------------------------------------
     # STEP 5 — TOKENIZATION
@@ -314,32 +415,20 @@ def extract_intent(query):
                 matched = True
                 break
 
-            # FUZZY
-            fuzzy = fuzzy_match(token, values)
-            if fuzzy:
+            # 🔥 SMART MATCH (replaces fuzzy + phonetic)
+            match ,score = smart_match(token, values)
+
+            if match and score >=0.75:
+                
                 if field == "product_type":
-                    detected_product_types.append(fuzzy)
-                    print("✔ Fuzzy product_type →", fuzzy)
+                    detected_product_types.append(match)
+                    print("✔ Smart product_type →", match)
                 else:
-                    filters[field] = fuzzy
-                    print("✔ Fuzzy match", field)
+                    filters[field] = match
+                    print("✔ Smart match", field)
 
                 matched = True
                 break
-
-            # PHONETIC
-            phonetic = phonetic_match(token, values)
-            if phonetic:
-                if field == "product_type":
-                    detected_product_types.append(phonetic)
-                    print("✔ Phonetic product_type →", phonetic)
-                else:
-                    filters[field] = phonetic
-                    print("✔ Phonetic match", field)
-
-                matched = True
-                break
-
         if not matched:
 
             # 🔥 skip ONLY if attribute already used as filter
