@@ -4,7 +4,7 @@ import re
 # PURITY NORMALIZATION
 # ------------------------------------------------
 PURITY_MAP = {
-    "22k": "22K",
+    "22k": "22k",
     "22karat":"22k",
     "22 karat":"22k",
     "22carat":"22k",
@@ -15,12 +15,9 @@ PURITY_MAP = {
     "18 karat":"22k",
     "18carat":"22k",
     "18 carat":"22k",
-    "18k": "18K",
-    "18kt": "18K",
-    "750": "18K",
-    "14k": "14K",
-    "14kt": "14K",
-    "585": "14K"
+    "18k": "18k",
+    "18kt": "18k",
+    "750": "18k"
 }
 
 def normalize_purity(query):

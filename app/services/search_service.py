@@ -100,6 +100,7 @@ def search_products(query):
     # ------------------------------------------------
 
     search_text, filters = extract_intent(query)
+    boost_signals = {}
 
     print("\n[INTENT RESULT]")
     print("Search Text:", search_text)
@@ -118,7 +119,7 @@ def search_products(query):
     # STEP 3 — BUILD QUERY
     # ------------------------------------------------
 
-    query_body = build_search_query(search_text, filters)
+    query_body = build_search_query(search_text, filters, boost_signals)
 
     print("\n[SEARCH] Executing initial search")
 
@@ -131,6 +132,33 @@ def search_products(query):
     hits = response["hits"]["hits"]
 
     print("[SEARCH] Initial results:", len(hits))
+    # ------------------------------------------------
+    # DEBUG — PRINT SCORES (EXACT PLACE)
+    # ------------------------------------------------
+
+    print("\n========== SEARCH SCORES ==========")
+
+    for i, hit in enumerate(hits[:10]):  # top 10 results
+
+        source = hit["_source"]
+        score = hit["_score"]
+
+        print(f"{i+1}. Score: {score:.4f}")
+
+        print("   Name:", source.get("product_name"))
+
+        if "product_type" in source:
+            print("   Type:", source.get("product_type"))
+
+        if "metal" in source:
+            print("   Metal:", source.get("metal"))
+
+        if "purity" in source:
+            print("   Purity:", source.get("purity"))
+
+        print("----------------------------------")
+
+    print("==================================\n")
 
     # ------------------------------------------------
     # STEP 4 — FILTER RELAXATION
@@ -146,9 +174,30 @@ def search_products(query):
 
             print("[RELAXATION] Removing filter:", conflicting_filter)
 
-            del filters[conflicting_filter]
+            # ---------------------------------------
+            # 🔥 CONVERT FILTER → BOOST SIGNAL
+            # ---------------------------------------
 
-            query_body = build_search_query(search_text, filters)
+            value = filters.pop(conflicting_filter)
+
+            boost_key = f"user_{conflicting_filter}"
+            boost_signals[boost_key] = value
+
+            print(f"🎯 Converted {conflicting_filter} → boost:", value)
+
+            # ---------------------------------------
+            # REBUILD QUERY WITH BOOST SIGNALS
+            # ---------------------------------------
+
+            query_body = build_search_query(search_text, filters, boost_signals)
+
+            print("[RELAXATION] Re-running search after converting to boost")
+
+            response = client.search(index=INDEX_NAME, body=query_body)
+
+            hits = response["hits"]["hits"]
+
+            print("[RELAXATION] Results after relaxation:", len(hits))
 
             print("[RELAXATION] Re-running search after removing filter")
 

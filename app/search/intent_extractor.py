@@ -19,7 +19,7 @@ def phonetic_code(word):
 
 def fuzzy_match(token, values):
     values = [str(v) for v in values]
-    match = get_close_matches(token, values, n=1, cutoff=0.7)
+    match = get_close_matches(token, values, n=1, cutoff=0.8)
     return match[0] if match else None
 
 
@@ -70,7 +70,7 @@ def smart_match(token, values):
     # ---------------------------------------
     # 4. CONTROLLED FUZZY
     # ---------------------------------------
-    matches = get_close_matches(token, filtered, n=3, cutoff=0.78)
+    matches = get_close_matches(token, filtered, n=3, cutoff=0.80)
 
     for m in matches:
         score = SequenceMatcher(None, token, m).ratio()
@@ -82,7 +82,7 @@ def smart_match(token, values):
     if best_match:
         print(f"[SMART MATCH] ✔ FUZZY → {token} → {best_match} (score={best_score:.2f})")
         return best_match, best_score
-
+    '''
     # ---------------------------------------
     # 5. PHONETIC MATCH
     # ---------------------------------------
@@ -90,9 +90,10 @@ def smart_match(token, values):
 
     for v in values:
         if phonetic_code(v) == token_ph:
-            score = 0.75  # fixed confidence
+            score = 0.80  # fixed confidence
             print(f"[SMART MATCH] ✔ PHONETIC → {token} → {v} (score={score})")
             return v, score
+        '''
 
     # ---------------------------------------
     # 6. NO MATCH
@@ -115,7 +116,7 @@ def extract_intent(query):
     filters = {}
     search_terms = []
     product_type_locked = False
-    detected_product_types = []
+   
     used_attribute_filters = set()
 
     mugappu_detected = False
@@ -132,6 +133,21 @@ def extract_intent(query):
 
     if purity:
         filters["purity"] = purity
+
+
+    # ------------------------------------------------
+    # STEP 1B — METAL DETECTION (EXACT PLACE)
+    # ------------------------------------------------
+    print("\n[STEP 1B] METAL DETECTION")
+
+    METALS = ["gold", "silver"]
+
+    for word in query.split():
+        if word in METALS:
+            filters["metal"] = word
+            print(f"✔ Metal detected → {word}")
+            query = query.replace(word, "")
+            break
 
     # ------------------------------------------------
     # STEP 2 — LAYER DETECTION
@@ -214,9 +230,10 @@ def extract_intent(query):
 
                 print(f"✔ Mugappu count detected (fuzzy/phonetic) → {mugappu_count}")
 
-                # remove both number + word
+                
+                # remove only number, KEEP mugappu
                 query = query.replace(words[i - 1], "")
-                query = query.replace(word, "")
+                print(f"✔ Mugappu count detected → {mugappu_count}")
                 continue
 
         # 🔹 NORMAL DETECTION
@@ -227,7 +244,8 @@ def extract_intent(query):
             mugappu_detected = True
             print(f"✔ Mugappu detected (fuzzy/phonetic) → {word}")
 
-            query = query.replace(word, "")
+            # DO NOT remove mugappu
+            print(f"✔ Mugappu detected (kept in query) → {word}")
 
     print("[DEBUG] Query after mugappu cleanup →", query.strip())
 
@@ -238,32 +256,7 @@ def extract_intent(query):
     print("[DEBUG] Clean query →", query)
 
 
-    # ------------------------------------------------
-    # STEP 4C — PRODUCT TYPE PHRASE DETECTION (SMART)
-    # ------------------------------------------------
-    print("\n[STEP 4C] PRODUCT TYPE PHRASE DETECTION")
-
-    if "product_type" in CATALOG_ENTITIES:
-
-        words = query.split()
-
-        for i in range(len(words) - 1):
-
-            phrase = words[i] + " " + words[i + 1]
-
-            print(f"[STEP 4C] Checking phrase → {phrase}")
-
-            match, score = smart_match(phrase, CATALOG_ENTITIES["product_type"])
-
-            if match and score >= 0.75:
-                detected_product_types.append(match)
-
-                print(f"✔ Phrase match → {phrase} → {match} (score={score:.2f})")
-
-                # 🔥 REMOVE FULL PHRASE SAFELY
-                query = re.sub(rf'\b{phrase}\b', '', query)
-
-                break
+   
 
     # ------------------------------------------------
     # STEP 5 — TOKENIZATION
@@ -359,129 +352,102 @@ def extract_intent(query):
 
     print("[STEP 5B] Tokens after cleanup:", tokens)
 
-    
+    # ------------------------------------------------
+    # STEP 5C — GENDER DETECTION (USING CONFIG)
+    # ------------------------------------------------
+    print("\n[STEP 5C] GENDER DETECTION")
 
+    for word in tokens:
+        if word in GENDER_MAP:
+
+            gender_value = GENDER_MAP[word]
+
+            filters["gender"] = gender_value
+
+            print(f"✔ Gender detected → {word} → {gender_value}")
+
+            tokens.remove(word)
+            break
+
+    
     # ------------------------------------------------
-    # STEP 6 — TOKEN PROCESSING
+    # STEP 5D — PRODUCT TYPE NORMALIZATION (NEW)
     # ------------------------------------------------
+
+    print("\n[STEP 5D] PRODUCT TYPE NORMALIZATION")
+
+    normalized_tokens = []
+
     for token in tokens:
 
-        print("\nProcessing:", token)
+        match, score = smart_match(token, CATALOG_ENTITIES.get("product_type", []))
 
-        matched = False
+        if match:
+            print(f"✔ Corrected → {token} → {match} (score={score:.2f})")
+            normalized_tokens.append(match)
+        else:
+            normalized_tokens.append(token)
 
-        if token in {"usage", "use", "wear"}:
-            print("Skipping usage helper word:", token)
-            continue
+    tokens = normalized_tokens
 
-        if token in USAGE_MAP:
-            filters["usages"] = USAGE_MAP[token]
-            print("✔ Usage intent →", filters["usages"])
-            continue
-
-        usage_fuzzy = fuzzy_match(token, list(USAGE_MAP.keys()))
-        if usage_fuzzy:
-            filters["usages"] = USAGE_MAP[usage_fuzzy]
-            print("✔ Fuzzy usage →", filters["usages"])
-            continue
-
-        if token in {"layer", "layers"}:
-            filters["layers_range"] = 2
-            print("✔ Layer keyword detected")
-            continue
-
-        if token in GENDER_MAP:
-            filters["gender"] = GENDER_MAP[token]
-            print("✔ Gender match", filters["gender"])
-            continue
-
-        for field, values in CATALOG_ENTITIES.items():
-
-            if field in NUMERIC_FIELDS:
-                continue
-
-            if field == "product_type" and product_type_locked:
-                continue
-
-            # EXACT
-            if token in values:
-                if field == "product_type":
-                    detected_product_types.append(token)
-                    print("✔ Detected product_type →", token)
-                else:
-                    filters[field] = token
-                    print("✔ Exact match", field)
-
-                matched = True
-                break
-
-            # 🔥 SMART MATCH (replaces fuzzy + phonetic)
-            match ,score = smart_match(token, values)
-
-            if match and score >=0.75:
-                
-                if field == "product_type":
-                    detected_product_types.append(match)
-                    print("✔ Smart product_type →", match)
-                else:
-                    filters[field] = match
-                    print("✔ Smart match", field)
-
-                matched = True
-                break
-        if not matched:
-
-            # 🔥 skip ONLY if attribute already used as filter
-            if (
-                token == "stone" and "stone_type" in used_attribute_filters
-            ) or (
-                token == "pendant" and "pendant" in used_attribute_filters
-            ):
-                print(f"⛔ Skipping attribute token (already used as filter) → {token}")
-                continue
-
-            search_terms.append(token)
+    print("[STEP 5D] Tokens after normalization:", tokens)
 
     # ------------------------------------------------
-    # STEP 7 — FINAL MUGAPPU LOGIC
+    # STEP 5E — REMOVE SEMANTIC DUPLICATES (NEW)
     # ------------------------------------------------
+
+    print("\n[STEP 5E] REMOVE DUPLICATES")
+
+    clean_tokens = []
+
+    for token in tokens:
+
+        # skip if token already covered by bigger phrase
+        if any(token != t and token in t for t in tokens):
+            print(f"⚠️ Removing duplicate token → {token}")
+            continue
+
+        clean_tokens.append(token)
+
+    tokens = clean_tokens
+
+    print("[STEP 5E] Tokens after cleanup:", tokens)
+        
+
+    # ------------------------------------------------
+    # STEP 7 — FINAL MUGAPPU LOGIC (FIXED)
+    # ------------------------------------------------
+
     print("\n[STEP 7] FINAL MUGAPPU LOGIC")
 
     if mugappu_count is not None:
-        if detected_product_types:
-            filters["no_of_mugappu"] = mugappu_count
-            print("✔ Mugappu count filter →", mugappu_count)
-        else:
-            detected_product_types.append("mugappu")
+        filters["no_of_mugappu"] = mugappu_count
+        print("✔ Mugappu count filter →", mugappu_count)
 
     elif mugappu_detected:
-        if detected_product_types:
-            search_terms.append("mugappu")
-            print("✔ Mugappu as search text")
-        else:
-            detected_product_types.append("mugappu")
+        search_terms.append("mugappu")
+        print("✔ Mugappu added to search_terms")
+    # ---------------------------------------
+    # PRODUCT TYPE → DO NOT HANDLE HERE
+    # ---------------------------------------
 
-    # ------------------------------------------------
-    # STEP 8 — FINAL PRODUCT TYPE RESOLUTION
-    # ------------------------------------------------
-    print("\n[STEP 8] PRODUCT TYPE RESOLUTION")
-    print("Detected product types →", detected_product_types)
+    print("\n[STEP X] PRODUCT TYPE HANDLING SKIPPED")
+    print("👉 Product type will be handled in query builder")
 
-    if detected_product_types:
+    # ---------------------------------------
+    # FINAL SEARCH TEXT (CLEAN)
+    # ---------------------------------------
 
-        main_product = detected_product_types[-1]
-        filters["product_type"] = main_product
-
-        print("✔ Final product_type →", main_product)
-
-        for p in detected_product_types[:-1]:
-            search_terms.append(p)
-            print("✔ Added to search_text →", p)
-
+    if search_terms:
+        final_tokens = search_terms + tokens
     else:
-        print("No product type detected")
+        final_tokens = tokens
 
-    search_text = " ".join(search_terms)
+    # remove duplicates while keeping order
+    seen = set()
+    final_tokens = [t for t in final_tokens if not (t in seen or seen.add(t))]
+
+    search_text = " ".join(final_tokens)
 
     print("\n================================================")
     print("INTENT RESULT")

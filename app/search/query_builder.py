@@ -1,7 +1,13 @@
 import json
+from app.search.entity_loader import load_catalog_entities
+CATALOG_ENTITIES = None
 
+def build_search_query(search_text, filters=None, boost_signals=None):
+    global CATALOG_ENTITIES
 
-def build_search_query(search_text, filters=None):
+    if CATALOG_ENTITIES is None:
+        print("[QB] Loading catalog entities...")
+        CATALOG_ENTITIES = load_catalog_entities()
 
     print("\n================================================")
     print("QUERY BUILDER STARTED")
@@ -9,6 +15,11 @@ def build_search_query(search_text, filters=None):
 
     if filters is None:
         filters = {}
+
+    if boost_signals is None:
+        boost_signals = {}
+
+    
 
     print("\nIncoming Search Text →", search_text)
     print("Incoming Filters →", filters)
@@ -22,6 +33,24 @@ def build_search_query(search_text, filters=None):
             }
         }
     }
+
+
+    # ---------------------------------------
+    # STEP 0 — PRODUCT TYPE DETECTION (NEW)
+    # ---------------------------------------
+
+    print("\n[STEP 0] PRODUCT TYPE DETECTION (QB)")
+
+    tokens = search_text.split()
+
+    detected_product_types = []
+
+    for token in tokens:
+        if token in CATALOG_ENTITIES["product_type"]:
+            detected_product_types.append(token)
+            print("✔ Detected product_type →", token)
+
+  
 
     # ------------------------------------------------
     # STEP 1 — TEXT SEARCH
@@ -40,7 +69,8 @@ def build_search_query(search_text, filters=None):
                             "query": search_text,
                             "type": "cross_fields",
                             "fields": [
-                                "product_name^4",
+                                "product_name^5",
+                                "product_type^4",
                                 "product_name.synonym^3",
                                 "coated_with^2",
                                 "motifs"
@@ -48,7 +78,7 @@ def build_search_query(search_text, filters=None):
                             "minimum_should_match": "75%"
                         }
                     },
-
+                    
                     # FUZZY SEARCH
                     {
                         "multi_match": {
@@ -56,10 +86,12 @@ def build_search_query(search_text, filters=None):
                             "type": "best_fields",
                             "fields": [
                                 "product_name^2",
+                                "product_type^3",
                                 "coated_with^2",
                                 "motifs"
                             ],
-                            "fuzziness": "AUTO"
+                            "fuzziness": "1",
+                            "prefix_length":"2"
                         }
                     },
 
@@ -68,7 +100,7 @@ def build_search_query(search_text, filters=None):
                         "match": {
                             "product_name.phonetic": {
                                 "query": search_text,
-                                "boost": 3
+                                "boost": 0.5
                             }
                         }
                     }
@@ -196,5 +228,104 @@ def build_search_query(search_text, filters=None):
     print("\n================================================")
     print("QUERY BUILDER FINISHED")
     print("================================================\n")
+
+    # ---------------------------------------
+    #STEP 4 PRODUCT TYPE APPLICATION
+    # ---------------------------------------
+
+    # ---------------------------------------
+    # STEP 4 — PRODUCT TYPE LOGIC (FINAL)
+    # ---------------------------------------
+
+    if detected_product_types:
+
+        if len(detected_product_types) >= 2:
+            primary = detected_product_types[-1]
+            secondary = detected_product_types[:-1]
+        else:
+            primary = detected_product_types[0]
+            secondary = []
+
+        print(f"🎯 Primary → {primary}")
+        print(f"🎯 Secondary → {secondary}")
+
+        # ✅ MUST → primary
+        body["query"]["bool"]["filter"].append({
+            "term": {"product_type": primary}
+        })
+
+        # ✅ SHOULD → secondary
+        body["query"]["bool"].setdefault("should", [])
+
+        for sec in secondary:
+
+            body["query"]["bool"]["should"].append({
+                "term": {
+                    "product_type": {
+                        "value": sec,
+                        "boost": 3
+                    }
+                }
+            })
+
+            body["query"]["bool"]["should"].append({
+                "match": {
+                    "product_name": {
+                        "query": sec,
+                        "boost": 2
+                    }
+                }
+            })
+   
+
+    # ---------------------------------------
+    # STEP 5 — DEFAULT BOOSTING (FINAL)
+    # ---------------------------------------
+
+    print("\n[STEP 5] DEFAULT BOOSTING")
+
+    body["query"]["bool"].setdefault("should", [])
+
+    # -------------------------------
+    # METAL LOGIC
+    # -------------------------------
+    if "metal" in filters:
+        print("🔒 Metal filter already applied →", filters["metal"])
+    else:
+        body["query"]["bool"]["should"].append({
+            "constant_score": {
+                "filter": {
+                    "term": {
+                        "metal": "gold"
+                    }
+                },
+                "boost": 8
+            }
+        })
+        print("🎯 Gold boost applied")
+
+    # -------------------------------
+    # PURITY LOGIC
+    # -------------------------------
+    if "purity" in filters:
+        print("🔒 Purity filter already applied →", filters["purity"])
+    else:
+        body["query"]["bool"]["should"].append({
+            "constant_score": {
+                "filter": {
+                    "term": {
+                        "purity": "22k"
+                    }
+                },
+                "boost": 6
+            }
+        })
+        print("🎯 22K boost applied")
+
+    # IMPORTANT: allow should to act as boost only
+    body["query"]["bool"]["minimum_should_match"] = 0
+
+
+    
 
     return body
