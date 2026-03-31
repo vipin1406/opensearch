@@ -1,4 +1,4 @@
-from difflib import get_close_matches,SequenceMatcher
+from difflib import get_close_matches, SequenceMatcher
 from metaphone import doublemetaphone
 from app.search.entity_loader import load_catalog_entities
 import re
@@ -41,25 +41,16 @@ def smart_match(token, values):
     best_match = None
     best_score = 0
 
-    # ---------------------------------------
-    # 1. EXACT MATCH
-    # ---------------------------------------
     if token in values:
         print(f"[SMART MATCH] ✔ EXACT → {token}")
         return token, 1.0
 
-    # ---------------------------------------
-    # 2. PREFIX MATCH
-    # ---------------------------------------
     for v in values:
         if len(token) >= 4 and v.startswith(token[:4]):
             score = SequenceMatcher(None, token, v).ratio()
             print(f"[SMART MATCH] ✔ PREFIX → {token} → {v} (score={score:.2f})")
             return v, score
 
-    # ---------------------------------------
-    # 3. LENGTH FILTER
-    # ---------------------------------------
     filtered = [
         v for v in values
         if abs(len(v) - len(token)) <= 2
@@ -67,9 +58,6 @@ def smart_match(token, values):
 
     print(f"[SMART MATCH] Length-filtered candidates → {filtered[:5]}...")
 
-    # ---------------------------------------
-    # 4. CONTROLLED FUZZY
-    # ---------------------------------------
     matches = get_close_matches(token, filtered, n=3, cutoff=0.80)
 
     for m in matches:
@@ -82,25 +70,9 @@ def smart_match(token, values):
     if best_match:
         print(f"[SMART MATCH] ✔ FUZZY → {token} → {best_match} (score={best_score:.2f})")
         return best_match, best_score
-    '''
-    # ---------------------------------------
-    # 5. PHONETIC MATCH
-    # ---------------------------------------
-    token_ph = phonetic_code(token)
 
-    for v in values:
-        if phonetic_code(v) == token_ph:
-            score = 0.80  # fixed confidence
-            print(f"[SMART MATCH] ✔ PHONETIC → {token} → {v} (score={score})")
-            return v, score
-        '''
-
-    # ---------------------------------------
-    # 6. NO MATCH
-    # ---------------------------------------
     print(f"[SMART MATCH] ✘ NO MATCH → {token}")
     return None, 0
-
 
 
 def extract_intent(query):
@@ -115,8 +87,6 @@ def extract_intent(query):
 
     filters = {}
     search_terms = []
-    product_type_locked = False
-   
     used_attribute_filters = set()
 
     mugappu_detected = False
@@ -124,143 +94,75 @@ def extract_intent(query):
 
     query = query.lower()
 
-    # ------------------------------------------------
-    # STEP 1 — PURITY DETECTION
-    # ------------------------------------------------
-    print("\n[STEP 1] PURITY DETECTION")
-
+    # STEP 1 — PURITY
     query, purity = normalize_purity(query)
-
     if purity:
         filters["purity"] = purity
 
+    # STEP 1A — PURITY MAP BACKUP
+    for word in query.split():
+        if word in PURITY_MAP:
+            filters["purity"] = PURITY_MAP[word]
+            query = query.replace(word, "")
+            print(f"✔ Purity detected (map) → {filters['purity']}")
+            break
 
-    # ------------------------------------------------
-    # STEP 1B — METAL DETECTION (EXACT PLACE)
-    # ------------------------------------------------
-    print("\n[STEP 1B] METAL DETECTION")
-
+    # STEP 1B — METAL
     METALS = ["gold", "silver"]
-
     for word in query.split():
         if word in METALS:
             filters["metal"] = word
-            print(f"✔ Metal detected → {word}")
             query = query.replace(word, "")
             break
+    # STEP — GENDER
+    for word in query.split():
+        if word in GENDER_MAP:
+            filters["gender"] = GENDER_MAP[word]
+            query = query.replace(word, "")
+            print(f"✔ Gender detected → {filters['gender']}")
+            break
 
-    # ------------------------------------------------
-    # STEP 2 — LAYER DETECTION
-    # ------------------------------------------------
-    print("\n[STEP 2] LAYER DETECTION")
-
-    layer_pattern = r"(\d+)\s*layer"
-    match = re.search(layer_pattern, query)
-
+    # STEP 2 — LAYER
+    match = re.search(r"(\d+)\s*layer", query)
     if match:
-        layer_value = int(match.group(1))
-
-        if layer_value >= 4:
-            filters["layers_range"] = layer_value
-            print("✔ Multiple Layers ≥", layer_value)
+        val = int(match.group(1))
+        if val >= 4:
+            filters["layers_range"] = val
         else:
-            filters["layers"] = layer_value
-            print("✔ Layers =", layer_value)
-
+            filters["layers"] = val
         query = query.replace(match.group(0), "")
+    
+    # STEP — USAGE (daily wear, wedding, office etc.)
+    for word in query.split():
+        if word in USAGE_MAP:
+            filters["usage"] = USAGE_MAP[word]
+            query = query.replace(word, "")
+            print(f"✔ Usage detected → {filters['usage']}")
+            break
 
-    # ------------------------------------------------
-    # STEP 3 — WEIGHT DETECTION
-    # ------------------------------------------------
-    print("\n[STEP 3] WEIGHT DETECTION")
-
+    # STEP 3 — WEIGHT
     sovereign_match = re.search(r'(under|below|above|over)?\s*(\d+)\s*sovereign', query)
-
     if sovereign_match:
-        condition = sovereign_match.group(1)
-        sovereign = int(sovereign_match.group(2))
-        grams = sovereign * 8
+        cond = sovereign_match.group(1)
+        grams = int(sovereign_match.group(2)) * 8
 
-        if condition in ["under", "below"]:
+        if cond in ["under", "below"]:
             filters["weight_range"] = {"lte": grams}
-            print("✔ Weight ≤", grams)
-        elif condition in ["above", "over"]:
+        elif cond in ["above", "over"]:
             filters["weight_range"] = {"gte": grams}
-            print("✔ Weight ≥", grams)
         else:
             filters["weight_value"] = grams
-            print("✔ Target Weight", grams)
 
         query = query.replace(sovereign_match.group(0), "")
 
-    elif re.search(r'(\d+)\s*(grams|gram|gm|grms|grm|graam|g)', query):
-        gram_match = re.search(r'(\d+)\s*(grams|gram|gm|grms|grm|graam|g)', query)
-        weight = int(gram_match.group(1))
-
-        filters["weight_value"] = weight
-        print("✔ Target Weight →", weight)
-
-        query = re.sub(r'(\d+)\s*(gm|g|gram|grams|graam|grm|grms)', '', query)
-
-    # ------------------------------------------------
     # STEP 4 — LOAD ENTITIES
-    # ------------------------------------------------
     if CATALOG_ENTITIES is None:
-        print("\n[STEP 4] Loading catalog entities")
         CATALOG_ENTITIES = load_catalog_entities()
 
-    # ------------------------------------------------
-    # STEP 4B — MUGAPPU DETECTION (FUZZY + PHONETIC)
-    # ------------------------------------------------
-    print("\n[STEP 4B] MUGAPPU DETECTION")
-
-    words = query.split()
-
-    for i, word in enumerate(words):
-
-        # 🔹 CHECK COUNT (number before word)
-        if i > 0 and words[i - 1].isdigit():
-
-            fuzzy = fuzzy_match(word, ["mugappu"])
-            phonetic = phonetic_match(word, ["mugappu"])
-
-            if fuzzy or phonetic:
-                mugappu_count = int(words[i - 1])
-                mugappu_detected = True
-
-                print(f"✔ Mugappu count detected (fuzzy/phonetic) → {mugappu_count}")
-
-                
-                # remove only number, KEEP mugappu
-                query = query.replace(words[i - 1], "")
-                print(f"✔ Mugappu count detected → {mugappu_count}")
-                continue
-
-        # 🔹 NORMAL DETECTION
-        fuzzy = fuzzy_match(word, ["mugappu"])
-        phonetic = phonetic_match(word, ["mugappu"])
-
-        if fuzzy or phonetic:
-            mugappu_detected = True
-            print(f"✔ Mugappu detected (fuzzy/phonetic) → {word}")
-
-            # DO NOT remove mugappu
-            print(f"✔ Mugappu detected (kept in query) → {word}")
-
-    print("[DEBUG] Query after mugappu cleanup →", query.strip())
-
-    # ------------------------------------------------
-    # FINAL QUERY CLEANUP
-    # ------------------------------------------------
+    # CLEAN
     query = clean_query(query)
-    print("[DEBUG] Clean query →", query)
 
-
-   
-
-    # ------------------------------------------------
     # STEP 5 — TOKENIZATION
-    # ------------------------------------------------
     STOP_WORDS = {"under","below","above","over","with","of","for","in","on","and"}
 
     tokens = [
@@ -268,186 +170,70 @@ def extract_intent(query):
         if t not in STOP_WORDS and (len(t) > 1 or t in {"cz", "ad"})
     ]
 
-    print("\n[STEP 5] Tokens:", tokens)
+    # -------------------------
+    # ML LOGGING
+    # -------------------------
+    original_tokens = tokens.copy()
+    corrections = []
 
-
-    # ------------------------------------------------
-    # STEP 5B — WITH/WITHOUT ATTRIBUTE DETECTION
-    # ------------------------------------------------
-
-    print("\n[STEP 5B] WITH/WITHOUT DETECTION")
-
-    ATTRIBUTE_MAP = {
-        "stone": "stone_type",
-        "pendant": "pendant"
-    }
-
-    words = query.split()
-
-    i = 0
-    while i < len(words):
-
-        word = words[i]
-
-        # -------------------------------
-        # CASE 1: with kemp stone
-        # -------------------------------
-        if word == "with" and i + 2 < len(words):
-
-            mid_word = words[i + 1]
-            next_word = words[i + 2]
-
-            if fuzzy_match(next_word, ["stone"]):
-
-                stone_match = fuzzy_match(mid_word, CATALOG_ENTITIES.get("stone_type", []))
-
-                if stone_match:
-                    filters["stone_type"] = stone_match
-                    used_attribute_filters.add("stone_type")
-                    print(f"✔ Specific stone detected → {stone_match}")
-
-                    query = query.replace(word, "")
-                    query = query.replace(mid_word, "")
-                    query = query.replace(next_word, "")
-
-                    i += 3
-                    continue
-
-        # -------------------------------
-        # CASE 2: with stone / without stone
-        # -------------------------------
-        if word in {"with", "without"} and i + 1 < len(words):
-
-            next_word = words[i + 1]
-
-            attr = fuzzy_match(next_word, ATTRIBUTE_MAP.keys())
-
-            if attr:
-
-                field = ATTRIBUTE_MAP[attr]
-
-                if word == "with":
-                    filters[field] = {"exists": True}
-                    used_attribute_filters.add(field)
-                    print(f"✔ WITH detected → {field} exists")
-
-                else:
-                    filters[field] = {"exists": False}
-                    print(f"✔ WITHOUT detected → {field} missing")
-
-                query = query.replace(word, "")
-                query = query.replace(next_word, "")
-
-                i += 2
-                continue
-
-        i += 1
-
-    print("[DEBUG] Query after attribute cleanup →", query.strip())
-    # 🔥 RE-TOKENIZE AFTER CLEANUP
-    tokens = [
-        t for t in query.split()
-        if t not in STOP_WORDS and (len(t) > 1 or t in {"cz", "ad"})
-]
-
-    print("[STEP 5B] Tokens after cleanup:", tokens)
-
-    # ------------------------------------------------
-    # STEP 5C — GENDER DETECTION (USING CONFIG)
-    # ------------------------------------------------
-    print("\n[STEP 5C] GENDER DETECTION")
-
-    for word in tokens:
-        if word in GENDER_MAP:
-
-            gender_value = GENDER_MAP[word]
-
-            filters["gender"] = gender_value
-
-            print(f"✔ Gender detected → {word} → {gender_value}")
-
-            tokens.remove(word)
-            break
-
-    
-    # ------------------------------------------------
-    # STEP 5D — PRODUCT TYPE NORMALIZATION (NEW)
-    # ------------------------------------------------
-
-    print("\n[STEP 5D] PRODUCT TYPE NORMALIZATION")
-
+    # STEP 5D — NORMALIZATION
     normalized_tokens = []
+    did_you_mean_tokens = []
+    scores = []
+    correction_applied = False
 
     for token in tokens:
 
         match, score = smart_match(token, CATALOG_ENTITIES.get("product_type", []))
 
-        if match:
-            print(f"✔ Corrected → {token} → {match} (score={score:.2f})")
+        if match and score >= 0.80:
+
             normalized_tokens.append(match)
+            did_you_mean_tokens.append(match)
+            scores.append(score)
+
+            if match != token:
+                correction_applied = True
+
+                corrections.append({
+                    "from": token,
+                    "to": match,
+                    "score": round(score, 2)
+                })
+
         else:
             normalized_tokens.append(token)
+            did_you_mean_tokens.append(token)
+            scores.append(0.3)
 
     tokens = normalized_tokens
 
-    print("[STEP 5D] Tokens after normalization:", tokens)
+    # STEP 5F — CONFIDENCE
+    token_confidence = sum(scores) / len(scores) if scores else 1.0
 
-    # ------------------------------------------------
-    # STEP 5E — REMOVE SEMANTIC DUPLICATES (NEW)
-    # ------------------------------------------------
-
-    print("\n[STEP 5E] REMOVE DUPLICATES")
-
-    clean_tokens = []
-
-    for token in tokens:
-
-        # skip if token already covered by bigger phrase
-        if any(token != t and token in t for t in tokens):
-            print(f"⚠️ Removing duplicate token → {token}")
-            continue
-
-        clean_tokens.append(token)
-
-    tokens = clean_tokens
-
-    print("[STEP 5E] Tokens after cleanup:", tokens)
-        
-
-    # ------------------------------------------------
-    # STEP 7 — FINAL MUGAPPU LOGIC (FIXED)
-    # ------------------------------------------------
-
-    print("\n[STEP 7] FINAL MUGAPPU LOGIC")
-
-    if mugappu_count is not None:
-        filters["no_of_mugappu"] = mugappu_count
-        print("✔ Mugappu count filter →", mugappu_count)
-
-    elif mugappu_detected:
-        search_terms.append("mugappu")
-        print("✔ Mugappu added to search_terms")
-    # ---------------------------------------
-    # PRODUCT TYPE → DO NOT HANDLE HERE
-    # ---------------------------------------
-
-    print("\n[STEP X] PRODUCT TYPE HANDLING SKIPPED")
-    print("👉 Product type will be handled in query builder")
-
-    # ---------------------------------------
-    # FINAL SEARCH TEXT (CLEAN)
-    # ---------------------------------------
-
-    if search_terms:
-        final_tokens = search_terms + tokens
+    if any(t in CATALOG_ENTITIES["product_type"] for t in tokens):
+        structure_score = 1.0
     else:
-        final_tokens = tokens
+        structure_score = 0.2
 
-    # remove duplicates while keeping order
-    seen = set()
-    final_tokens = [t for t in final_tokens if not (t in seen or seen.add(t))]
+    base_confidence = (
+        token_confidence * 0.7 +
+        structure_score * 0.3
+    )
 
-    search_text = " ".join(final_tokens)
+    # ATTRIBUTE SCORE
+    important_attributes = ["metal", "purity", "stone_type", "gender", "weight_range"]
+    detected = sum(1 for k in filters if k in important_attributes)
+    attribute_score = detected / len(important_attributes)
+
+    # FINAL TEXT
+    search_text = " ".join(tokens)
+
+    normalized_tokens = tokens.copy()
+
+    did_you_mean = None
+    if correction_applied:
+        did_you_mean = " ".join(did_you_mean_tokens)
 
     print("\n================================================")
     print("INTENT RESULT")
@@ -455,4 +241,15 @@ def extract_intent(query):
     print("Filters:", filters)
     print("================================================")
 
-    return search_text, filters
+    return {
+        "search_text": search_text,
+        "filters": filters,
+        "did_you_mean": did_you_mean,
+        "base_confidence": base_confidence,
+        "attribute_score": attribute_score,
+
+        # ML DATA
+        "original_tokens": original_tokens,
+        "normalized_tokens": normalized_tokens,
+        "corrections": corrections
+    }

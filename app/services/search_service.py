@@ -1,6 +1,8 @@
 from opensearchpy import OpenSearch
 from app.search.intent_extractor import extract_intent
 from app.search.query_builder import build_search_query
+import json
+from datetime import datetime
 
 INDEX_NAME = "jewellery_products"
 
@@ -10,9 +12,6 @@ client = OpenSearch(
 
 
 def calculate_weight_tolerance(weight):
-
-    print("\n[WEIGHT] Calculating tolerance")
-
     if weight < 10:
         return 1
     elif weight < 30:
@@ -24,17 +23,12 @@ def calculate_weight_tolerance(weight):
 
 
 def apply_weight_range(filters):
-
-    print("\n[WEIGHT] Applying weight range logic")
-
     filters = filters.copy()
 
     if "weight_value" not in filters:
-        print("[WEIGHT] No weight_value found")
         return filters
 
     weight = filters["weight_value"]
-
     tolerance = calculate_weight_tolerance(weight)
 
     filters["weight_range"] = {
@@ -43,48 +37,7 @@ def apply_weight_range(filters):
     }
 
     del filters["weight_value"]
-
-    print("[WEIGHT] Weight Range:", filters["weight_range"])
-
     return filters
-
-
-def detect_conflicting_filter(search_text, filters):
-
-    print("\n[RELAXATION] Detecting conflicting filter")
-
-    PROTECTED_FILTERS = {"product_type"}
-
-    for key in list(filters.keys()):
-
-        if key in PROTECTED_FILTERS:
-            print(f"[RELAXATION] Skipping protected filter → {key}")
-            continue
-
-        test_filters = filters.copy()
-        del test_filters[key]
-
-        print(f"[RELAXATION] Testing without filter → {key}")
-
-        query_body = build_search_query(search_text, test_filters)
-
-        try:
-            response = client.search(index=INDEX_NAME, body=query_body)
-        except Exception as e:
-            print("[RELAXATION] Search error:", e)
-            continue
-
-        hits = response["hits"]["hits"]
-
-        print(f"[RELAXATION] Results without {key}: {len(hits)}")
-
-        if hits:
-            print(f"[RELAXATION] Conflicting filter detected → {key}")
-            return key
-
-    print("[RELAXATION] No removable conflicting filter found")
-
-    return None
 
 
 def search_products(query):
@@ -95,25 +48,47 @@ def search_products(query):
 
     print("\n[INPUT] Query:", query)
 
+    # 🔥 STEP 0 — CORRECTION LAYER (ADDED LINE)
+    from app.search.correction import apply_correction
+    query = apply_correction(query)
+    print("[CORRECTED QUERY]:", query)
+
     # ------------------------------------------------
-    # STEP 1 — INTENT EXTRACTION
+    # STEP 1 — INTENT EXTRACTION (UPDATED)
     # ------------------------------------------------
 
-    search_text, filters = extract_intent(query)
+    intent_data = extract_intent(query)
+
+    search_text = intent_data["search_text"]
+    filters = intent_data["filters"]
+    did_you_mean = intent_data["did_you_mean"]
+    base_confidence = intent_data["base_confidence"]
+    attribute_score = intent_data["attribute_score"]
+
+    # ML fields
+    original_tokens = intent_data["original_tokens"]
+    normalized_tokens = intent_data["normalized_tokens"]
+    corrections = intent_data["corrections"]
+
+    # default confidence
+    final_confidence = base_confidence
+    quality = "GOOD"
     boost_signals = {}
 
-    print("\n[INTENT RESULT]")
-    print("Search Text:", search_text)
-    print("Filters:", filters)
+    # ------------------------------------------------
+    # STEP 1B — MODE DETECTION
+    # ------------------------------------------------
+
+    mode = "manual"
+
+    if not filters:
+        mode = "fallback"
 
     # ------------------------------------------------
     # STEP 2 — APPLY WEIGHT RANGE
     # ------------------------------------------------
 
     filters = apply_weight_range(filters)
-
-    print("\n[FILTERS AFTER WEIGHT LOGIC]")
-    print(filters)
 
     # ------------------------------------------------
     # STEP 3 — BUILD QUERY
@@ -130,134 +105,107 @@ def search_products(query):
         return []
 
     hits = response["hits"]["hits"]
+    results_count = len(hits)
 
-    print("[SEARCH] Initial results:", len(hits))
-    # ------------------------------------------------
-    # DEBUG — PRINT SCORES (EXACT PLACE)
-    # ------------------------------------------------
+    top_score = hits[0]["_score"] if results_count else 0
+    os_score = min(top_score / 100, 1.0)
 
-    print("\n========== SEARCH SCORES ==========")
-
-    for i, hit in enumerate(hits[:10]):  # top 10 results
-
-        source = hit["_source"]
-        score = hit["_score"]
-
-        print(f"{i+1}. Score: {score:.4f}")
-
-        print("   Name:", source.get("product_name"))
-
-        if "product_type" in source:
-            print("   Type:", source.get("product_type"))
-
-        if "metal" in source:
-            print("   Metal:", source.get("metal"))
-
-        if "purity" in source:
-            print("   Purity:", source.get("purity"))
-
-        print("----------------------------------")
-
-    print("==================================\n")
+    if results_count > 20:
+        result_count_score = 1.0
+    elif results_count > 5:
+        result_count_score = 0.7
+    else:
+        result_count_score = 0.4
 
     # ------------------------------------------------
-    # STEP 4 — FILTER RELAXATION
+    # FINAL CONFIDENCE
     # ------------------------------------------------
 
-    if len(hits) == 0 and filters:
+    final_confidence = (
+        base_confidence * 0.4 +
+        attribute_score * 0.2 +
+        os_score * 0.25 +
+        result_count_score * 0.15
+    )
 
-        print("\n[RELAXATION] Zero results → detecting conflicting filter")
-
-        conflicting_filter = detect_conflicting_filter(search_text, filters)
-
-        if conflicting_filter:
-
-            print("[RELAXATION] Removing filter:", conflicting_filter)
-
-            # ---------------------------------------
-            # 🔥 CONVERT FILTER → BOOST SIGNAL
-            # ---------------------------------------
-
-            value = filters.pop(conflicting_filter)
-
-            boost_key = f"user_{conflicting_filter}"
-            boost_signals[boost_key] = value
-
-            print(f"🎯 Converted {conflicting_filter} → boost:", value)
-
-            # ---------------------------------------
-            # REBUILD QUERY WITH BOOST SIGNALS
-            # ---------------------------------------
-
-            query_body = build_search_query(search_text, filters, boost_signals)
-
-            print("[RELAXATION] Re-running search after converting to boost")
-
-            response = client.search(index=INDEX_NAME, body=query_body)
-
-            hits = response["hits"]["hits"]
-
-            print("[RELAXATION] Results after relaxation:", len(hits))
-
-            print("[RELAXATION] Re-running search after removing filter")
-
-            response = client.search(index=INDEX_NAME, body=query_body)
-
-            hits = response["hits"]["hits"]
-
-            print("[RELAXATION] Results after relaxation:", len(hits))
+    if mode == "fallback":
+        final_confidence *= 0.5
 
     # ------------------------------------------------
-    # STEP 5 — PRODUCT TYPE FALLBACK
+    # QUALITY
     # ------------------------------------------------
 
-    if len(hits) == 0 and "product_type" in filters:
-
-        print("\n[FALLBACK] Product type fallback activated")
-
-        product_filter = {
-            "product_type": filters["product_type"]
-        }
-
-        query_body = build_search_query("", product_filter)
-
-        response = client.search(index=INDEX_NAME, body=query_body)
-
-        hits = response["hits"]["hits"]
-
-        print("[FALLBACK] Product type fallback results:", len(hits))
+    if final_confidence >= 0.85:
+        quality = "BEST"
+    elif final_confidence >= 0.7:
+        quality = "GOOD"
+    else:
+        quality = "WORST"
 
     # ------------------------------------------------
-    # STEP 6 — POPULAR PRODUCTS FALLBACK
+    # FALLBACK LOGIC (UNCHANGED)
     # ------------------------------------------------
 
     if len(hits) == 0:
-
-        print("\n[FALLBACK] Nothing matched → returning popular products")
-
         query_body = {
             "size": 20,
-            "query": {
-                "match_all": {}
-            }
+            "query": {"match_all": {}}
         }
-
         response = client.search(index=INDEX_NAME, body=query_body)
-
         hits = response["hits"]["hits"]
-
-        print("[FALLBACK] Popular products returned:", len(hits))
-
-    # ------------------------------------------------
-    # STEP 7 — FINAL RESULTS
-    # ------------------------------------------------
 
     results = [hit["_source"] for hit in hits]
 
-    print("\n[FINAL RESULT COUNT]", len(results))
+    # ------------------------------------------------
+    # 🔥 ML LOGGING (NEW)
+    # ------------------------------------------------
+
+    ml_log = {
+        "timestamp": datetime.utcnow().isoformat(),
+
+        "query": query,
+        "tokens": original_tokens,
+
+        "corrections": corrections,
+
+        "normalized_query": search_text,
+        "normalized_tokens": normalized_tokens,
+
+        "entities": filters,
+
+        "features": {
+            "token_confidence": round(base_confidence, 2),
+            "attribute_score": round(attribute_score, 2),
+            "os_score": round(os_score, 2),
+            "result_count": results_count,
+            "num_tokens": len(original_tokens),
+            "num_entities": len(filters)
+        },
+
+        "result_info": {
+            "top_score": top_score,
+            "quality": quality,
+            "mode": mode
+        }
+    }
+
+    # print log
+    print("\n========== ML LOG ==========")
+    print(json.dumps(ml_log, indent=2))
+    print("============================\n")
+
+    # save log
+    with open("ml_logs.jsonl", "a") as f:
+        f.write(json.dumps(ml_log) + "\n")
 
     print("\n================================================")
     print("SEARCH SERVICE FINISHED")
     print("================================================\n")
 
-    return results
+    return {
+        "results": results,
+        "did_you_mean": did_you_mean,
+        "confidence": round(final_confidence, 2),
+        "quality": quality,
+        "mode": mode
+    }
