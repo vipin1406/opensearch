@@ -20,22 +20,32 @@ PURITY_MAP = {
     "750": "18k"
 }
 
+import re
+
 def normalize_purity(query):
-    pattern = r"(22\s?k|22\s?kt|916|18\s?k|18\s?kt|750|14\s?k|14\s?kt|585)"
-    match = re.search(pattern, query)
+    """
+    Extract purity and REMOVE it completely from query
+    """
 
-    if not match:
-        return query, None
+    purity = None
 
-    raw = match.group(0).replace(" ", "").lower()
-    normalized = PURITY_MAP.get(raw)
+    # Match: 22k, 22 k, 22 karat, 22kt
+    match = re.search(r"\b(22|18|24)\s*(k|kt|karat)?\b", query)
 
-    query = re.sub(pattern, "", query)
+    if match:
+        value = match.group(1)
+        purity = f"{value}k"
 
-    print(f"[NORMALIZER] Purity → {raw} → {normalized}")
+        # 🔥 Remove the full matched pattern
+        query = query.replace(match.group(0), "")
 
-    return query, normalized
+    # 🔥 Remove leftover words (important)
+    query = re.sub(r"\b(k|kt|karat)\b", "", query)
 
+    # 🔥 Clean extra spaces
+    query = " ".join(query.split())
+
+    return query, purity
 
 # ------------------------------------------------
 # WEIGHT NORMALIZATION

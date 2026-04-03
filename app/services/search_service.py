@@ -40,6 +40,7 @@ def apply_weight_range(filters):
     return filters
 
 
+
 def search_products(query):
 
     print("\n================================================")

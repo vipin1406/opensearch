@@ -10,6 +10,7 @@ from app.search.normalizer import (
     clean_query
 )
 
+
 CATALOG_ENTITIES = None
 
 
@@ -74,6 +75,57 @@ def smart_match(token, values):
     print(f"[SMART MATCH] ✘ NO MATCH → {token}")
     return None, 0
 
+
+
+def extract_numeric_filters(tokens, filters):
+    """
+    Extract numeric-based filters like mugappu, weight, layers
+    """
+
+    updated_tokens = []
+    i = 0
+
+    while i < len(tokens):
+        token = tokens[i]
+
+        # -------------------------------
+        # HANDLE NUMBERS
+        # -------------------------------
+        if token.isdigit():
+            value = int(token)
+
+            # Look ahead
+            if i + 1 < len(tokens):
+                next_token = tokens[i + 1]
+
+                # 🔥 MUGAPPU LOGIC
+                if next_token == "mugappu":
+                    filters["no_of_mugappu"] = {
+                        "gte": value
+                    }
+                    print(f"✔ Extracted mugappu filter → >= {value}")
+                    i += 2
+                    continue
+
+                # 🔥 WEIGHT LOGIC (future ready)
+                elif next_token in ["gram", "g", "grams"]:
+                    filters["weight_value"] = value
+                    print(f"✔ Extracted weight filter → {value}g")
+                    i += 2
+                    continue
+
+                # 🔥 LAYERS LOGIC (future)
+                elif next_token in ["layer", "layers"]:
+                    filters["layers_range"] = value
+                    print(f"✔ Extracted layers filter → >= {value}")
+                    i += 2
+                    continue
+
+        # keep token if not consumed
+        updated_tokens.append(token)
+        i += 1
+
+    return updated_tokens, filters
 
 def extract_intent(query):
 
@@ -167,8 +219,14 @@ def extract_intent(query):
 
     tokens = [
         t for t in query.split()
-        if t not in STOP_WORDS and (len(t) > 1 or t in {"cz", "ad"})
+        if t not in STOP_WORDS and (len(t) > 1 or t.isdigit() or t in {"cz", "ad"})
     ]
+
+    # ---------------------------------------
+    # 🔥 NUMERIC FILTER EXTRACTION (ADD HERE)
+    # ---------------------------------------
+
+    tokens, filters = extract_numeric_filters(tokens, filters)
 
     # -------------------------
     # ML LOGGING
@@ -206,7 +264,14 @@ def extract_intent(query):
             did_you_mean_tokens.append(token)
             scores.append(0.3)
 
-    tokens = normalized_tokens
+    # DO NOT overwrite tokens completely
+    # tokens = normalized_tokens  ❌ REMOVE THIS
+
+    tokens = [
+        normalized_tokens[i] if not original_tokens[i].isdigit()
+        else original_tokens[i]
+        for i in range(len(normalized_tokens))
+    ]
 
     # STEP 5F — CONFIDENCE
     token_confidence = sum(scores) / len(scores) if scores else 1.0
