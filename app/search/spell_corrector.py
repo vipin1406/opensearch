@@ -49,7 +49,7 @@ def is_whitelisted(token, vocabulary):
 # -----------------------------------
 def correct_token(token, vocabulary):
 
-    print("\n🔍 Processing token:", token)
+    print("\n🔍 Processing token (fuzzy/phonetic stage):", token)
 
     token = token.lower()
 
@@ -68,7 +68,7 @@ def correct_token(token, vocabulary):
         return token
 
     # -----------------------------------
-    # 3. FUZZY MATCH (CONTROLLED)
+    # 3. FUZZY MATCH
     # -----------------------------------
     print("➡️ Trying fuzzy match...")
 
@@ -79,21 +79,17 @@ def correct_token(token, vocabulary):
         candidate = fuzzy[0]
         print(f"🔎 Candidate → {candidate}")
 
-        # EDIT DISTANCE
         dist = edit_distance(token, candidate)
         print(f"📏 Edit Distance → {dist}")
 
-        # 🔒 RULE: 4-letter strict
         if len(token) == 4 and dist > 1:
             print("⛔ Rejected → 4-letter word, distance > 1")
             return token
 
-        # 🔒 RULE: general limit
         if dist > 2:
             print("⛔ Rejected → distance > 2")
             return token
 
-        # CONFIDENCE
         ratio = SequenceMatcher(None, token, candidate).ratio()
         print(f"📊 Confidence Ratio → {ratio:.2f}")
 
@@ -101,7 +97,6 @@ def correct_token(token, vocabulary):
             print("⛔ Rejected → low confidence")
             return token
 
-        # LENGTH DIFFERENCE
         if abs(len(token) - len(candidate)) > 1:
             print("⛔ Rejected → length difference too high")
             return token
@@ -112,7 +107,7 @@ def correct_token(token, vocabulary):
     print("❌ No fuzzy match found")
 
     # -----------------------------------
-    # 4. PHONETIC MATCH (SAFE MODE)
+    # 4. PHONETIC MATCH
     # -----------------------------------
     print("➡️ Trying phonetic match...")
 
@@ -125,7 +120,6 @@ def correct_token(token, vocabulary):
             dist = edit_distance(token, word)
             print(f"🔎 Phonetic candidate → {word} (distance={dist})")
 
-            # STRICT CONTROL
             if dist <= 2:
                 print(f"✅ Phonetic corrected → {token} → {word}")
                 return word
@@ -139,16 +133,72 @@ def correct_token(token, vocabulary):
 # -----------------------------------
 # MAIN SPELL CORRECTION PIPELINE
 # -----------------------------------
-def spell_correct(tokens, vocabulary):
+def spell_correct(tokens, vocabulary, entities):
 
     print("\n========== 🔤 SPELL CORRECTION START ==========")
 
     corrected_tokens = []
 
+    # -----------------------------------
+    # 🔥 BUILD PRIORITY ENTITY SETS
+    # -----------------------------------
+    tag_entities = set(str(v).strip().lower() for v in entities.get("tags", []))
+    product_entities = set(str(v).strip().lower() for v in entities.get("product_type", []))
+
+    # fallback (all entities)
+    all_entities = set()
+    for field_values in entities.values():
+        for val in field_values:
+            all_entities.add(str(val).strip().lower())
+
+    print("\n📦 ENTITY SUMMARY")
+    print("Tags count:", len(tag_entities))
+    print("Product types count:", len(product_entities))
+    print("Total entities:", len(all_entities))
+
+    # -----------------------------------
+    # 🔄 TOKEN LOOP
+    # -----------------------------------
     for token in tokens:
-        corrected = correct_token(token, vocabulary)
+
+        token_clean = token.strip().lower()
+
+        print(f"\n[CORRECTION] Processing token → {token_clean}")
+
+        # ==========================================
+        # ✅ STEP 1: STRICT EXACT MATCH PRIORITY
+        # ==========================================
+        if token_clean in tag_entities:
+            print(f"[CORRECTION] ✅ EXACT TAG MATCH → {token_clean}")
+            corrected_tokens.append(token_clean)
+            continue
+
+        if token_clean in product_entities:
+            print(f"[CORRECTION] ✅ EXACT PRODUCT TYPE MATCH → {token_clean}")
+            corrected_tokens.append(token_clean)
+            continue
+
+        if token_clean in all_entities:
+            print(f"[CORRECTION] ✅ EXACT MATCH (OTHER FIELD) → {token_clean}")
+            corrected_tokens.append(token_clean)
+            continue
+
+        # ==========================================
+        # 🔄 STEP 2: APPLY CONTROLLED CORRECTION
+        # ==========================================
+        corrected = correct_token(token_clean, vocabulary)
+
+        # 🔥 DEBUG: SHOW FINAL DECISION
+        if corrected != token_clean:
+            print(f"[CORRECTION] 🔁 FINAL CORRECTION → {token_clean} → {corrected}")
+        else:
+            print(f"[CORRECTION] ➡️ NO CHANGE → {token_clean}")
+
         corrected_tokens.append(corrected)
 
+    # -----------------------------------
+    # 📊 FINAL OUTPUT
+    # -----------------------------------
     print("\n🧾 FINAL TOKENS →", corrected_tokens)
     print("========== 🔤 SPELL CORRECTION END ==========\n")
 

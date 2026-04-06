@@ -54,6 +54,13 @@ def load_catalog_entities():
                     }
                 },
 
+                "tags": {
+                    "terms": {
+                        "field": "tags.keyword",   # 🔥 IMPORTANT
+                        "size": 500
+                    }
+                },
+
                 "usages": {
                     "terms": {
                         "field": "usages",
@@ -76,6 +83,10 @@ def load_catalog_entities():
 
         "metal": [
             b["key"] for b in response["aggregations"]["metal"]["buckets"]
+        ],
+
+        "tags": [
+            b["key"] for b in response["aggregations"]["tags"]["buckets"]
         ],
 
         "product_type": [
@@ -108,6 +119,7 @@ def load_catalog_entities():
 
     for field, values in entities.items():
         print(f"{field} → {values}")
+        print("Checking field:", field)
 
     print("===============================================\n")
 

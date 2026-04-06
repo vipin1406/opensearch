@@ -5,4 +5,4 @@ client = OpenSearch(
 )
 
 def get_client():
-    return client
+    return client  

@@ -6,13 +6,41 @@ GENDER_MAP = {
     "mens": "MEN",
     "men": "MEN",
     "unisex": "UNISEX",
-    "baby"  : "BABY"
-}   
+    "baby": "BABY"
+}
 
+NORMALIZATION_MAP = {
+    "pendent": "pendant",
+    "doller": "dollar",
+    "adigai": "attigai"
+}
+
+
+# 🔥 NORMALIZATION FUNCTION
+def normalize_query_text(text: str):
+
+    words = text.split()
+
+    normalized_words = []
+
+    for w in words:
+        if w in NORMALIZATION_MAP:
+            normalized_words.append(NORMALIZATION_MAP[w])
+        else:
+            normalized_words.append(w)
+
+    return " ".join(normalized_words)
+
+
+# 🔥 PARSE QUERY (ONLY PLACE FOR NORMALIZATION)
 def parse_query(query: str):
 
     filters = {}
+
     clean_query = query.lower()
+
+    # ✅ NORMALIZE HERE (IMPORTANT)
+    clean_query = normalize_query_text(clean_query)
 
     # -------- Gender Detection --------
     for word, value in GENDER_MAP.items():
@@ -39,6 +67,7 @@ def parse_query(query: str):
     return clean_query.strip(), filters
 
 
+# 🔥 TOKENIZER (NO NORMALIZATION HERE)
 def tokenize_query(query: str):
 
     print("\n========== TOKENIZATION ==========")

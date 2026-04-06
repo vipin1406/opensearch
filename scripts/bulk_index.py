@@ -2,7 +2,35 @@ import pandas as pd
 import numpy as np
 import re
 from opensearchpy import OpenSearch, helpers
+from prepare_data import generate_tags
 
+
+NORMALIZATION_MAP = {
+    "pendent": "pendant",
+    "pendant": "pendant",
+    "doller": "dollar",
+    "dollar": "dollar",
+    "attigai": "attigai",
+    "adigai": "attigai",
+    "chian":"chain",
+    "enamal":"enamel"
+}
+
+def normalize_text(value):
+    if not value:
+        return value
+
+    words = str(value).lower().split()
+
+    normalized_words = []
+
+    for w in words:
+        if w in NORMALIZATION_MAP:
+            normalized_words.append(NORMALIZATION_MAP[w])
+        else:
+            normalized_words.append(w)
+
+    return " ".join(normalized_words)
 
 # ------------------------------------------------
 # CONNECT TO OPENSEARCH
@@ -117,11 +145,7 @@ df = df.where(pd.notnull(df), None)
 # ------------------------------------------------
 actions = []
 
-for _, row in df.iterrows():
 
-    doc = row.to_dict()
-
-    actions = []
 
 for _, row in df.iterrows():
 
@@ -131,6 +155,20 @@ for _, row in df.iterrows():
     for key, value in doc.items():
         if pd.isna(value):
             doc[key] = None
+
+    # 🔥 NORMALIZE HERE (CORRECT PLACE)
+    for field in ["product_name", "product_type"]:
+        if field in doc and doc[field]:
+            doc[field] = normalize_text(doc[field])
+    
+
+
+    # 🔥 ADD TAG GENERATION HERE
+    doc["tags"] = generate_tags(doc)
+
+    # 🔥 DEBUG (TEMP)
+    print("\nINDEXING:", doc.get("product_name"))
+    print("TAGS:", doc.get("tags"))
 
     actions.append({
         "_index": "jewellery_products",

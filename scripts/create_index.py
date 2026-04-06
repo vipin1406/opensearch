@@ -14,11 +14,7 @@ mapping = {
     "synonym_filter": {
      "type": "synonym_graph",
      "synonyms": [
-      "chain, necklace",
-      "bangle, bracelet",
-      "stud, earring",
-      "ring, band",
-      "cz, cubic zirconia"
+      "adigai","attigai"
      ]
     },
     "edge_ngram_filter": {
@@ -93,6 +89,13 @@ mapping = {
     "type": "text",
     "analyzer": "synonym_analyzer"
    },
+   "tags":{"type":"text",
+    "fields":{
+    "keyword":{
+    "type":"keyword"
+    }
+    }
+        }
   }
  }
 }

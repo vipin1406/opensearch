@@ -236,48 +236,39 @@ def build_search_query(search_text, filters=None, boost_signals=None):
     # ---------------------------------------
     # STEP 4 — PRODUCT TYPE LOGIC (FINAL)
     # ---------------------------------------
-
+    
     if detected_product_types:
 
-        if len(detected_product_types) >= 2:
-            primary = detected_product_types[-1]
-            secondary = detected_product_types[:-1]
-        else:
-            primary = detected_product_types[0]
-            secondary = []
-
-        print(f"🎯 Primary → {primary}")
-        print(f"🎯 Secondary → {secondary}")
-
-        # ✅ MUST → primary
-        body["query"]["bool"]["filter"].append({
-            "term": {"product_type": primary}
-        })
-
-        # ✅ SHOULD → secondary
         body["query"]["bool"].setdefault("should", [])
 
-        for sec in secondary:
+        product_types = list(set(detected_product_types))
 
+        print(f"🎯 Product Types → {product_types}")
+
+        for pt in product_types:
+
+            # 🔥 strong boost for product_type
             body["query"]["bool"]["should"].append({
                 "term": {
                     "product_type": {
-                        "value": sec,
-                        "boost": 3
+                        "value": pt,
+                        "boost": 8
                     }
                 }
             })
 
+            # 🔥 support via product_name
             body["query"]["bool"]["should"].append({
                 "match": {
                     "product_name": {
-                        "query": sec,
-                        "boost": 2
+                        "query": pt,
+                        "boost": 4
                     }
                 }
             })
-   
-
+    
+    
+    
     # ---------------------------------------
     # STEP 5 — DEFAULT BOOSTING (FINAL)
     # ---------------------------------------

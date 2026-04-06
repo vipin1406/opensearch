@@ -56,3 +56,96 @@ def normalize_layers(value):
     print("No layer pattern detected → returning None")
 
     return None
+
+
+import re
+
+# -----------------------------------
+# CONFIG
+# -----------------------------------
+
+TAG_COLUMNS = [
+    "product_name",
+    "product_type",
+    "coated_with",
+    "metal_colour",
+    "stone_type",
+    "motifs",
+    "usages"
+]
+
+STOP_WORDS = {
+    "the", "and", "with", "for", "of", "in", "on",
+    "a", "an", "to"
+}
+
+
+# -----------------------------------
+# CLEAN TEXT
+# -----------------------------------
+
+def clean_text(text):
+    text = str(text).lower()
+
+    # remove special characters
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+
+    # normalize spaces
+    text = " ".join(text.split())
+
+    return text
+
+
+# -----------------------------------
+# EXTRACT WORDS
+# -----------------------------------
+
+def extract_words(value):
+    value = clean_text(value)
+
+    words = value.split()
+
+    # filter noise
+    words = [
+        w for w in words
+        if w not in STOP_WORDS
+           # avoid junk like "a", "x"
+    ]
+
+    return words
+
+
+# -----------------------------------
+# GENERATE TAGS
+# -----------------------------------
+
+def generate_tags(product):
+    tags = set()
+
+    # -----------------------------------
+    # ADD "earring" FOR STUD
+    # -----------------------------------
+
+    pt = product.get("product_type")
+
+    if pt:
+        pt = pt.lower()
+
+        if pt == "stud":
+            tags.add("earring")
+    for column in TAG_COLUMNS:
+
+        value = product.get(column)
+
+        if not value:
+            continue
+
+        # handle list values (if any)
+        if isinstance(value, list):
+            for v in value:
+                tags.update(extract_words(v))
+
+        else:
+            tags.update(extract_words(value))
+
+    return list(tags)

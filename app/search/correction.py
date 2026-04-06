@@ -45,12 +45,32 @@ def generate_candidates(token):
                 "edit_distance": get_edit_distance(token, m)
             }
 
-            candidate["score"] = (
-                sim * candidate["field_priority"]
-                + (0.2 if candidate["prefix"] else 0)
-                - (0.1 * candidate["edit_distance"])
-            )
+            # ==========================================
+            # 🔥 NEW SCORING (BALANCED)
+            # ==========================================
 
+            # 1. EXACT MATCH BOOST (absolute priority)
+            exact_match = 1 if token == m else 0
+
+            # 2. SIMILARITY (main factor)
+            similarity_score = sim * 5   # ↑ increased weight
+
+            # 3. FIELD PRIORITY (reduced influence)
+            field_score = candidate["field_priority"] * 0.5
+
+            # 4. PREFIX BONUS
+            prefix_score = 0.3 if candidate["prefix"] else 0
+
+            # 5. EDIT DISTANCE PENALTY
+            distance_penalty = candidate["edit_distance"] * 0.2
+
+            candidate["score"] = (
+                (exact_match * 100) +     # 🔥 dominates everything
+                similarity_score +
+                field_score +
+                prefix_score -
+                distance_penalty
+            )
             print(
                 f"   ✔ Candidate → {m} | field={field} | "
                 f"sim={sim:.2f} | score={candidate['score']:.2f}"

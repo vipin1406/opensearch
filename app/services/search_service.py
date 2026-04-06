@@ -147,11 +147,7 @@ def search_products(query):
     # FALLBACK LOGIC (UNCHANGED)
     # ------------------------------------------------
 
-    if len(hits) == 0:
-        query_body = {
-            "size": 20,
-            "query": {"match_all": {}}
-        }
+    
         response = client.search(index=INDEX_NAME, body=query_body)
         hits = response["hits"]["hits"]
 

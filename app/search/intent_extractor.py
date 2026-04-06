@@ -32,49 +32,46 @@ def phonetic_match(token, values):
     return None
 
 
-def smart_match(token, values):
+def smart_match(token, candidates):
 
-    print(f"\n[SMART MATCH] Processing token → {token}")
+    print(f"[SMART MATCH] Processing token → {token}")
 
-    token = str(token)
-    values = [str(v) for v in values]
+    token_clean = token.strip().lower()
+
+    # ==========================================
+    # 🔥 FIX 1: GLOBAL ENTITY PROTECTION
+    # ==========================================
+    all_entities = []
+
+    for values in CATALOG_ENTITIES.values():
+        if values:
+            all_entities.extend([str(v).strip().lower() for v in values])
+
+    if token_clean in all_entities:
+        print(f"[SMART MATCH] 🛑 GLOBAL EXACT MATCH → {token_clean}")
+        return token_clean, 1.0
+
+    # ==========================================
+    # 🔄 NORMAL FLOW (FIELD-LEVEL MATCH)
+    # ==========================================
+    normalized_candidates = [str(c).strip().lower() for c in candidates]
 
     best_match = None
     best_score = 0
 
-    if token in values:
-        print(f"[SMART MATCH] ✔ EXACT → {token}")
-        return token, 1.0
-
-    for v in values:
-        if len(token) >= 4 and v.startswith(token[:4]):
-            score = SequenceMatcher(None, token, v).ratio()
-            print(f"[SMART MATCH] ✔ PREFIX → {token} → {v} (score={score:.2f})")
-            return v, score
-
-    filtered = [
-        v for v in values
-        if abs(len(v) - len(token)) <= 2
-    ]
-
-    print(f"[SMART MATCH] Length-filtered candidates → {filtered[:5]}...")
-
-    matches = get_close_matches(token, filtered, n=3, cutoff=0.80)
-
-    for m in matches:
-        score = SequenceMatcher(None, token, m).ratio()
+    for candidate in normalized_candidates:
+        score = SequenceMatcher(None, token_clean, candidate).ratio()
 
         if score > best_score:
-            best_match = m
             best_score = score
+            best_match = candidate
 
-    if best_match:
-        print(f"[SMART MATCH] ✔ FUZZY → {token} → {best_match} (score={best_score:.2f})")
+    if best_score >= 0.80:
+        print(f"[SMART MATCH] ✔ FUZZY → {token_clean} → {best_match} (score={best_score:.2f})")
         return best_match, best_score
 
-    print(f"[SMART MATCH] ✘ NO MATCH → {token}")
-    return None, 0
-
+    print(f"[SMART MATCH] ✘ NO MATCH → {token_clean}")
+    return token_clean, 0.0
 
 
 def extract_numeric_filters(tokens, filters):
