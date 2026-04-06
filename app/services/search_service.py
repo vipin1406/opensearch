@@ -40,7 +40,6 @@ def apply_weight_range(filters):
     return filters
 
 
-
 def search_products(query):
 
     print("\n================================================")
@@ -49,15 +48,14 @@ def search_products(query):
 
     print("\n[INPUT] Query:", query)
 
-    # 🔥 STEP 0 — CORRECTION LAYER (ADDED LINE)
+    # 🔥 STEP 0 — CORRECTION
     from app.search.correction import apply_correction
     query = apply_correction(query)
     print("[CORRECTED QUERY]:", query)
 
     # ------------------------------------------------
-    # STEP 1 — INTENT EXTRACTION (UPDATED)
+    # STEP 1 — INTENT EXTRACTION
     # ------------------------------------------------
-
     intent_data = extract_intent(query)
 
     search_text = intent_data["search_text"]
@@ -71,33 +69,36 @@ def search_products(query):
     normalized_tokens = intent_data["normalized_tokens"]
     corrections = intent_data["corrections"]
 
-    # default confidence
+    # defaults
     final_confidence = base_confidence
     quality = "GOOD"
     boost_signals = {}
 
     # ------------------------------------------------
-    # STEP 1B — MODE DETECTION
-    # ------------------------------------------------
-
-    mode = "manual"
-
-    if not filters:
-        mode = "fallback"
-
-    # ------------------------------------------------
     # STEP 2 — APPLY WEIGHT RANGE
     # ------------------------------------------------
-
     filters = apply_weight_range(filters)
+
+    # ------------------------------------------------
+    # 🚫 STOP IF QUERY BECOMES EMPTY
+    # ------------------------------------------------
+    if not search_text.strip() and not filters:
+        print("🚫 EMPTY QUERY → RETURNING NO RESULTS")
+
+        return {
+            "results": [],
+            "did_you_mean": did_you_mean,
+            "confidence": 0.0,
+            "quality": "WORST",
+            "mode": "manual"
+        }
 
     # ------------------------------------------------
     # STEP 3 — BUILD QUERY
     # ------------------------------------------------
-
     query_body = build_search_query(search_text, filters, boost_signals)
 
-    print("\n[SEARCH] Executing initial search")
+    print("\n[SEARCH] Executing search")
 
     try:
         response = client.search(index=INDEX_NAME, body=query_body)
@@ -108,7 +109,24 @@ def search_products(query):
     hits = response["hits"]["hits"]
     results_count = len(hits)
 
-    top_score = hits[0]["_score"] if results_count else 0
+    # ------------------------------------------------
+    # 🚫 STRICT: NO RESULTS → RETURN EMPTY
+    # ------------------------------------------------
+    if results_count == 0:
+        print("🚫 NO RESULTS FOUND → RETURNING EMPTY")
+
+        return {
+            "results": [],
+            "did_you_mean": did_you_mean,
+            "confidence": 0.0,
+            "quality": "WORST",
+            "mode": "manual"
+        }
+
+    # ------------------------------------------------
+    # STEP 4 — SCORING
+    # ------------------------------------------------
+    top_score = hits[0]["_score"]
     os_score = min(top_score / 100, 1.0)
 
     if results_count > 20:
@@ -118,10 +136,6 @@ def search_products(query):
     else:
         result_count_score = 0.4
 
-    # ------------------------------------------------
-    # FINAL CONFIDENCE
-    # ------------------------------------------------
-
     final_confidence = (
         base_confidence * 0.4 +
         attribute_score * 0.2 +
@@ -129,13 +143,9 @@ def search_products(query):
         result_count_score * 0.15
     )
 
-    if mode == "fallback":
-        final_confidence *= 0.5
-
     # ------------------------------------------------
     # QUALITY
     # ------------------------------------------------
-
     if final_confidence >= 0.85:
         quality = "BEST"
     elif final_confidence >= 0.7:
@@ -144,32 +154,21 @@ def search_products(query):
         quality = "WORST"
 
     # ------------------------------------------------
-    # FALLBACK LOGIC (UNCHANGED)
+    # RESULTS
     # ------------------------------------------------
-
-    
-        response = client.search(index=INDEX_NAME, body=query_body)
-        hits = response["hits"]["hits"]
-
     results = [hit["_source"] for hit in hits]
 
     # ------------------------------------------------
-    # 🔥 ML LOGGING (NEW)
+    # 🔥 ML LOGGING
     # ------------------------------------------------
-
     ml_log = {
         "timestamp": datetime.utcnow().isoformat(),
-
         "query": query,
         "tokens": original_tokens,
-
         "corrections": corrections,
-
         "normalized_query": search_text,
         "normalized_tokens": normalized_tokens,
-
         "entities": filters,
-
         "features": {
             "token_confidence": round(base_confidence, 2),
             "attribute_score": round(attribute_score, 2),
@@ -178,20 +177,17 @@ def search_products(query):
             "num_tokens": len(original_tokens),
             "num_entities": len(filters)
         },
-
         "result_info": {
             "top_score": top_score,
             "quality": quality,
-            "mode": mode
+            "mode": "manual"
         }
     }
 
-    # print log
     print("\n========== ML LOG ==========")
     print(json.dumps(ml_log, indent=2))
     print("============================\n")
 
-    # save log
     with open("ml_logs.jsonl", "a") as f:
         f.write(json.dumps(ml_log) + "\n")
 
@@ -204,5 +200,5 @@ def search_products(query):
         "did_you_mean": did_you_mean,
         "confidence": round(final_confidence, 2),
         "quality": quality,
-        "mode": mode
+        "mode": "manual"
     }

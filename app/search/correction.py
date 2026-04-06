@@ -9,6 +9,7 @@ FIELD_PRIORITY = {
 }
 
 
+
 def get_edit_distance(a, b):
     return abs(len(a) - len(b))
 

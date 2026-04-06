@@ -71,7 +71,7 @@ def build_search_query(search_text, filters=None, boost_signals=None):
                             "fields": [
                                 "product_name^5",
                                 "product_type^4",
-                                "product_name.synonym^3",
+                                "tags^3",                                "product_name.synonym^3",
                                 "coated_with^2",
                                 "motifs"
                             ],
@@ -87,6 +87,7 @@ def build_search_query(search_text, filters=None, boost_signals=None):
                             "fields": [
                                 "product_name^2",
                                 "product_type^3",
+                                "tags^5",
                                 "coated_with^2",
                                 "motifs"
                             ],
