@@ -9,6 +9,40 @@ FIELD_PRIORITY = {
 }
 
 
+import json
+import os
+
+SPELL_MAP_PATH = "app/config/spell_map.json"
+
+
+def load_spell_map():
+    if not os.path.exists(SPELL_MAP_PATH):
+        return {}
+
+    with open(SPELL_MAP_PATH, "r") as f:
+        return json.load(f)
+    
+def apply_spell_mapping(query, spell_map):
+
+    print("\n========== SPELL MAP ==========")
+
+    tokens = query.lower().split()
+    corrected = []
+
+    for t in tokens:
+        if t in spell_map:
+            print(f"[SPELL MAP] {t} → {spell_map[t]}")
+            corrected.append(spell_map[t])
+        else:
+            corrected.append(t)
+
+    final_query = " ".join(corrected)
+
+    print("Mapped Query:", final_query)
+    print("================================\n")
+
+    return final_query
+    
 
 def get_edit_distance(a, b):
     return abs(len(a) - len(b))

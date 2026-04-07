@@ -2,7 +2,7 @@ import json
 from app.search.entity_loader import load_catalog_entities
 CATALOG_ENTITIES = None
 
-def build_search_query(search_text, filters=None, boost_signals=None):
+def build_search_query(search_text, filters=None, boost_terms=None, use_phonetic=False,boost_signals=None):
     global CATALOG_ENTITIES
 
     if CATALOG_ENTITIES is None:
@@ -269,7 +269,46 @@ def build_search_query(search_text, filters=None, boost_signals=None):
             })
     
     
-    
+    # ==========================================
+    # 🔥 STEP 4.5 — RULE ENGINE BOOST TERMS
+    # ==========================================
+    print("\n[STEP 4.5] APPLYING BOOST TERMS")
+
+    if boost_terms:
+        print(f"🔥 Boost terms → {boost_terms}")
+
+        body["query"]["bool"].setdefault("should", [])
+
+        # -------------------------------
+        # SINGLE TERM BOOST
+        # -------------------------------
+        for term in boost_terms:
+            body["query"]["bool"]["should"].append({
+                "term": {
+                    "tags.keyword": {
+                        "value": term,
+                        "boost": 3
+                    }
+                }
+            })
+
+        # -------------------------------
+        # COMBINATION BOOST (VERY IMPORTANT)
+        # -------------------------------
+        if len(boost_terms) >= 2:
+            body["query"]["bool"]["should"].append({
+                "bool": {
+                    "must": [
+                        {
+                            "term": {
+                                "tags.keyword": t
+                            }
+                        } for t in boost_terms
+                    ],
+                    "boost": 5
+                }
+            })
+        
     # ---------------------------------------
     # STEP 5 — DEFAULT BOOSTING (FINAL)
     # ---------------------------------------

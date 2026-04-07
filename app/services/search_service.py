@@ -3,6 +3,9 @@ from app.search.intent_extractor import extract_intent
 from app.search.query_builder import build_search_query
 import json
 from datetime import datetime
+from app.search.correction import load_spell_map, apply_spell_mapping
+
+
 
 INDEX_NAME = "jewellery_products"
 
@@ -47,6 +50,12 @@ def search_products(query):
     print("================================================")
 
     print("\n[INPUT] Query:", query)
+    
+    # ==========================================
+    # 🔥 SPELL MAPPING (CORRECT PLACE)
+    # ==========================================
+    spell_map = load_spell_map()
+    query = apply_spell_mapping(query, spell_map)
 
     # 🔥 STEP 0 — CORRECTION
     from app.search.correction import apply_correction
@@ -57,6 +66,21 @@ def search_products(query):
     # STEP 1 — INTENT EXTRACTION
     # ------------------------------------------------
     intent_data = extract_intent(query)
+    boost_terms = intent_data.get("boost_terms", [])
+
+    # ==========================================
+    # 🔥 DEFINE use_phonetic (FIX)
+    # ==========================================
+    final_confidence = intent_data.get("base_confidence", 1.0)
+    attribute_score = intent_data.get("attribute_score", 1.0)
+
+    use_phonetic = (
+        final_confidence < 0.6 or
+        attribute_score < 0.3
+    )
+
+    print(f"🧠 use_phonetic → {use_phonetic}")
+    boost_terms = intent_data.get("boost_terms", [])
 
     search_text = intent_data["search_text"]
     filters = intent_data["filters"]
@@ -96,7 +120,12 @@ def search_products(query):
     # ------------------------------------------------
     # STEP 3 — BUILD QUERY
     # ------------------------------------------------
-    query_body = build_search_query(search_text, filters, boost_signals)
+    query_body = build_search_query(
+                    search_text,
+                    filters,
+                    boost_terms=boost_terms,   # 🔥 ADD THIS
+                    use_phonetic=use_phonetic
+                )
 
     print("\n[SEARCH] Executing search")
 

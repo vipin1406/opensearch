@@ -11,8 +11,51 @@ from app.search.normalizer import (
 )
 
 
+
 CATALOG_ENTITIES = None
 
+import json
+
+def load_rules():
+    with open("app/config/rules.json") as f:
+        return json.load(f)["rules"]
+
+def apply_rules(tokens):
+
+    rules = load_rules()
+
+    # ==========================================
+    # 🔥 FIX: APPLY LONGER RULES FIRST
+    # ==========================================
+    rules = sorted(rules, key=lambda r: len(r["conditions"]), reverse=True)
+
+    filters = {}
+    boost_terms = []
+
+    for rule in rules:
+
+        conditions = rule["conditions"]
+
+        # check if all conditions match
+        if all(c in tokens for c in conditions):
+
+            print(f"[RULE ENGINE] Matched → {rule['name']}")
+
+            actions = rule.get("actions", {})
+
+            # apply filters
+            if "filters" in actions:
+                filters.update(actions["filters"])
+
+            # apply boost
+            if "boost_terms" in actions:
+                boost_terms.extend(actions["boost_terms"])
+
+            # remove tokens
+            if "remove_tokens" in actions:
+                tokens = [t for t in tokens if t not in actions["remove_tokens"]]
+
+    return tokens, filters, boost_terms
 
 def phonetic_code(word):
     return doublemetaphone(word)[0]
@@ -155,14 +198,15 @@ def extract_intent(query):
             query = query.replace(word, "")
             print(f"✔ Purity detected (map) → {filters['purity']}")
             break
-
+    '''
     # STEP 1B — METAL
     METALS = ["gold", "silver"]
     for word in query.split():
         if word in METALS:
             filters["metal"] = word
-            query = query.replace(word, "")
+            #query = query.replace(word, "")
             break
+    '''
     # STEP — GENDER
     for word in query.split():
         if word in GENDER_MAP:
@@ -170,6 +214,7 @@ def extract_intent(query):
             query = query.replace(word, "")
             print(f"✔ Gender detected → {filters['gender']}")
             break
+            
 
     # STEP 2 — LAYER
     match = re.search(r"(\d+)\s*layer", query)
@@ -218,6 +263,17 @@ def extract_intent(query):
         t for t in query.split()
         if t not in STOP_WORDS and (len(t) > 1 or t.isdigit() or t in {"cz", "ad"})
     ]
+    # ==========================================
+    # 🔥 APPLY RULE ENGINE (ADD THIS BLOCK)
+    # ==========================================
+    tokens, rule_filters, boost_terms = apply_rules(tokens)
+
+    # merge rule filters into main filters
+    filters.update(rule_filters)
+
+    print(f"[RULE ENGINE] Final tokens → {tokens}")
+    print(f"[RULE ENGINE] Filters → {filters}")
+    print(f"[RULE ENGINE] Boost → {boost_terms}")
 
     # ---------------------------------------
     # 🔥 NUMERIC FILTER EXTRACTION (ADD HERE)
@@ -306,6 +362,7 @@ def extract_intent(query):
     return {
         "search_text": search_text,
         "filters": filters,
+        "boost_terms": boost_terms,
         "did_you_mean": did_you_mean,
         "base_confidence": base_confidence,
         "attribute_score": attribute_score,

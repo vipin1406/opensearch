@@ -1,0 +1,18 @@
+{
+  "attributes": {
+    "gender": {
+      "men": ["men", "male", "boys", "gents"],
+      "women": ["women", "female", "girls", "ladies"],
+      "unisex":["unisex"],
+      "kids":["baby","child","infant"]
+    },
+    "metal": {
+      "gold": ["gold"],
+      "silver": ["silver"]
+    },
+    "stone_presence": {
+      "with_stone": ["stone", "studded"],
+      "without_stone": ["plain"]
+    }
+  }
+}

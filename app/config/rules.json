@@ -1,0 +1,44 @@
+{
+  "rules": [
+
+    {
+      "name": "gold_plated",
+      "conditions": ["gold", "plated"],
+      "actions": {
+        "boost_terms": ["gold", "plated"],
+        "remove_tokens": ["gold", "plated"]
+      }
+    },
+
+    {
+      "name": "silver_metal",
+      "conditions": ["silver"],
+      "actions": {
+        "filters": {
+          "metal": "silver"
+        }
+      }
+    },
+
+    {
+      "name": "gold_metal",
+      "conditions": ["gold"],
+      "actions": {
+        "filters": {
+          "metal": "gold"
+        }
+      }
+    },
+
+    {
+      "name": "chain_type",
+      "conditions": ["chain"],
+      "actions": {
+        "filters": {
+          "product_type": "chain"
+        }
+      }
+    }
+
+  ]
+}
