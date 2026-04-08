@@ -70,7 +70,7 @@ def build_search_query(search_text, filters=None, boost_terms=None, use_phonetic
                             "type": "cross_fields",
                             "fields": [
                                 "product_name^5",
-                                "product_type^4",
+                                "product_type^0",
                                 "tags^3",                                "product_name.synonym^3",
                                 "coated_with^2",
                                 "motifs"
@@ -86,7 +86,7 @@ def build_search_query(search_text, filters=None, boost_terms=None, use_phonetic
                             "type": "best_fields",
                             "fields": [
                                 "product_name^2",
-                                "product_type^3",
+                                "product_type^0",
                                 "tags^5",
                                 "coated_with^2",
                                 "motifs"
@@ -233,42 +233,65 @@ def build_search_query(search_text, filters=None, boost_terms=None, use_phonetic
     # ---------------------------------------
     #STEP 4 PRODUCT TYPE APPLICATION
     # ---------------------------------------
-
+   
     # ---------------------------------------
-    # STEP 4 — PRODUCT TYPE LOGIC (FINAL)
+    # STEP 4 — PRODUCT TYPE LOGIC (FIXED)
     # ---------------------------------------
-    
     if detected_product_types:
 
-        body["query"]["bool"].setdefault("should", [])
-
+        tokens = search_text.split()
         product_types = list(set(detected_product_types))
 
         print(f"🎯 Product Types → {product_types}")
+        print(f"🔍 Tokens → {tokens}")
 
-        for pt in product_types:
+        # ---------------------------------------
+        # 🔥 CASE 1 — STRONG INTENT (SINGLE WORD)
+        # ---------------------------------------
+        if len(tokens) == 1:
 
-            # 🔥 strong boost for product_type
-            body["query"]["bool"]["should"].append({
-                "term": {
-                    "product_type": {
-                        "value": pt,
-                        "boost": 8
+            print("🔥 Strong intent → applying FILTER")
+
+            for pt in product_types:
+                body["query"]["bool"]["filter"].append({
+                    "term": {
+                        "product_type": pt
                     }
-                }
-            })
+                })
 
-            # 🔥 support via product_name
-            body["query"]["bool"]["should"].append({
-                "match": {
-                    "product_name": {
-                        "query": pt,
-                        "boost": 4
+
+        # ---------------------------------------
+        # 🔥 CASE 2 — WEAK / MULTI INTENT
+        # ---------------------------------------
+        else:
+
+            print("⚡ Weak intent → applying BOOST only")
+
+            body["query"]["bool"].setdefault("should", [])
+
+            for pt in product_types:
+
+                # 🔥 soft boost
+                body["query"]["bool"]["should"].append({
+                    "term": {
+                        "product_type": {
+                            "value": pt,
+                            "boost": 3   # reduced from 8
+                        }
                     }
-                }
-            })
-    
-    
+                })
+
+                # 🔥 support via product_name
+                body["query"]["bool"]["should"].append({
+                    "match": {
+                        "product_name": {
+                            "query": pt,
+                            "boost": 2
+                        }
+                    }
+                })
+        
+
     # ==========================================
     # 🔥 STEP 4.5 — RULE ENGINE BOOST TERMS
     # ==========================================

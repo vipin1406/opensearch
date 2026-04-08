@@ -1,8 +1,10 @@
 from difflib import get_close_matches, SequenceMatcher
 from app.search.entity_loader import load_catalog_entities
+from app.search.spell_corrector import load_protected_words
 
 FIELD_PRIORITY = {
-    "product_type": 4,
+    "tags": 4,
+    "product_type":3,
     "metal": 3,
     "stone_type": 2,
     "usages": 1
@@ -161,10 +163,16 @@ def apply_correction(query):
     print(f"Original Query → {query}")
 
     tokens = query.lower().split()
+    protected_words = load_protected_words()
 
     final_tokens = []
 
     for token in tokens:
+         # 🚫 PROTECTED WORD GUARD (MUST ADD)
+        if token in protected_words:
+            print(f"🛑 Protected word → {token}")
+            final_tokens.append(token)
+            continue
         corrected, field = pick_best_candidate(token)
         final_tokens.append(corrected)
 

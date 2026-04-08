@@ -10,6 +10,17 @@ from app.search.normalizer import (
     clean_query
 )
 
+COMPOUND_MAP = None
+
+def load_compound_map():
+    global COMPOUND_MAP
+
+    if COMPOUND_MAP is None:
+        import json
+        with open("app/config/compound_map.json") as f:
+            COMPOUND_MAP = json.load(f)
+
+    return COMPOUND_MAP
 
 
 CATALOG_ENTITIES = None
@@ -275,9 +286,21 @@ def extract_intent(query):
     print(f"[RULE ENGINE] Filters → {filters}")
     print(f"[RULE ENGINE] Boost → {boost_terms}")
 
-    # ---------------------------------------
-    # 🔥 NUMERIC FILTER EXTRACTION (ADD HERE)
-    # ---------------------------------------
+
+    compound_map = load_compound_map()
+    query_text = " ".join(tokens)
+
+    # 🔥 check full phrase
+    if query_text in compound_map:
+        mapped_type = compound_map[query_text]
+
+        print(f"🔥 COMPOUND DETECTED → {query_text} → {mapped_type}")
+
+        # remove product_type filter if exists
+        filters.pop("product_type", None)
+
+        # instead use as boost
+        boost_terms.append(mapped_type)
 
     tokens, filters = extract_numeric_filters(tokens, filters)
 

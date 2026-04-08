@@ -2,6 +2,20 @@ from difflib import get_close_matches, SequenceMatcher
 from metaphone import doublemetaphone
 
 
+import json
+
+PROTECTED_WORDS = set()
+
+def load_protected_words():
+    global PROTECTED_WORDS
+
+    if not PROTECTED_WORDS:
+        with open("app/config/protected_words.json") as f:
+            PROTECTED_WORDS = set(json.load(f)["protected_words"])
+
+    return PROTECTED_WORDS
+
+
 # -----------------------------------
 # PHONETIC CODE
 # -----------------------------------
@@ -52,12 +66,21 @@ def correct_token(token, vocabulary):
     print("\n🔍 Processing token (fuzzy/phonetic stage):", token)
 
     token = token.lower()
+    if token in load_protected_words():
+        print("🛑 Protected inside correct_token →", token)
+        return token
 
     # -----------------------------------
     # 1. LENGTH RULE
     # -----------------------------------
     if len(token) < 3:
         print("⛔ Skip → length < 3")
+        return token
+
+
+    
+    if token in load_protected_words():
+        print("🛑 Protected inside correct_token →", token)
         return token
 
     # -----------------------------------
@@ -138,6 +161,8 @@ def spell_correct(tokens, vocabulary, entities):
     print("\n========== 🔤 SPELL CORRECTION START ==========")
 
     corrected_tokens = []
+    # ✅ ADD THIS
+    protected_words = load_protected_words()
 
     # -----------------------------------
     # 🔥 BUILD PRIORITY ENTITY SETS
@@ -159,11 +184,19 @@ def spell_correct(tokens, vocabulary, entities):
     # -----------------------------------
     # 🔄 TOKEN LOOP
     # -----------------------------------
+    protected_words = load_protected_words()
     for token in tokens:
 
         token_clean = token.strip().lower()
 
         print(f"\n[CORRECTION] Processing token → {token_clean}")
+        
+
+        # 🚫 PROTECTED WORD CHECK (ADD THIS)
+        if token_clean in protected_words:
+            print(f"🛑 Protected word → {token_clean}")
+            corrected_tokens.append(token_clean)
+            continue
 
         # ==========================================
         # ✅ STEP 1: STRICT EXACT MATCH PRIORITY
