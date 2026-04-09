@@ -22,6 +22,25 @@ PURITY_MAP = {
 
 import re
 
+def normalize_query(query: str) -> str:
+    print("\n========== NORMALIZER ==========")
+
+    # 🔥 split merged tokens: with24 → with 24
+    query = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", query)
+
+    # 🔥 split: 24grams → 24 grams
+    query = re.sub(r"(\d)([a-zA-Z])", r"\1 \2", query)
+
+    # normalize spaces
+    query = re.sub(r"\s+", " ", query).strip()
+
+    print("Normalized Query:", query)
+    print("================================\n")
+
+    return query
+
+import re
+
 def normalize_purity(query):
     """
     Extract purity and REMOVE it completely from query

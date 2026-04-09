@@ -10,6 +10,144 @@ from app.search.normalizer import (
     clean_query
 )
 
+def extract_attributes(query):
+
+    tokens = query.lower().split()
+    filters = {}
+    cleaned_tokens = []
+
+    i = 0
+
+    while i < len(tokens):
+
+        token = tokens[i]
+
+        # ==========================================
+        # 🔥 1. WEIGHT (HIGHEST PRIORITY)
+        # ==========================================
+
+        if token.endswith("g") or token.endswith("gm"):
+            number = token.replace("gm", "").replace("g", "")
+
+            if number.isdigit():
+                weight = int(number)
+
+                filters["weight_range"] = {
+                    "gte": max(0, weight - 2),
+                    "lte": weight + 2
+                }
+
+                print(f"✔ Weight detected → {weight}g")
+
+                i += 1
+                continue
+
+                # ==========================================
+        # 🔥 SMART WEIGHT OPERATORS
+        # ==========================================
+        if token in {"under", "below", "above", "over"}:
+
+            next_token = tokens[i+1] if i+1 < len(tokens) else ""
+            next_unit = tokens[i+2] if i+2 < len(tokens) else ""
+
+            if next_token.isdigit() and next_unit in {"gram", "grams", "gm", "g"}:
+
+                weight = int(next_token)
+
+                if token in {"under", "below"}:
+                    filters["weight_range"] = {
+                        "lte": weight
+                    }
+
+                elif token in {"above", "over"}:
+                    filters["weight_range"] = {
+                        "gte": weight
+                    }
+
+                print(f"✔ Smart weight detected → {filters['weight_range']}")
+
+                i += 3
+                continue
+
+
+        # ==========================================
+        # 🔥 NORMAL WEIGHT
+        # ==========================================
+        if token.isdigit():
+            next_word = tokens[i+1] if i+1 < len(tokens) else ""
+
+            # sovereign handling
+            if next_word in {"sovereign", "sovereigns", "pavan", "pavans"}:
+                grams = int(token) * 8
+
+                filters["weight_range"] = {
+                    "gte": max(0, grams - 2),
+                    "lte": grams + 2
+                }
+
+                print(f"✔ Sovereign detected → {grams}g")
+
+                i += 2
+                continue
+
+            # normal gram handling
+            if next_word in {"gram", "grams", "gm", "g"}:
+                weight = int(token)
+
+                filters["weight_range"] = {
+                    "gte": max(0, weight - 2),
+                    "lte": weight + 2
+                }
+
+                print(f"✔ Weight detected → {weight}g")
+
+                i += 2
+                continue
+
+        # ==========================================
+        # 🔥 2. PURITY
+        # ==========================================
+
+        if token.endswith("k") or token.endswith("kt"):
+            number = token.replace("k", "").replace("t", "")
+
+            if number in PURITY_MAP:
+                filters["purity"] = PURITY_MAP[number]
+                print(f"✔ Purity detected → {filters['purity']}")
+
+                i += 1
+                continue
+
+        if token.isdigit() and token in PURITY_MAP:
+            next_word = tokens[i+1] if i+1 < len(tokens) else ""
+
+            if next_word in {"karat", "carat", "kt", "k", "purity"}:
+                filters["purity"] = PURITY_MAP[token]
+                print(f"✔ Purity detected → {filters['purity']}")
+
+                i += 2
+                continue
+
+        # ==========================================
+        # 🔥 3. CLEANUP
+        # ==========================================
+
+        if token in {
+            "gram", "grams", "gm", "g",
+            "sovereign", "sovereigns","savaran",
+            "sevaran","pown","pavan","powen",
+            "pavan", "pavans"
+        }:
+            i += 1
+            continue
+
+        cleaned_tokens.append(token)
+        i += 1
+
+    clean_query = " ".join(cleaned_tokens)
+
+    return clean_query, filters
+
 COMPOUND_MAP = None
 
 def load_compound_map():
@@ -178,6 +316,46 @@ def extract_numeric_filters(tokens, filters):
 
     return updated_tokens, filters
 
+def extract_purity(query, filters):
+
+    tokens = query.lower().split()
+
+    i = 0
+
+    while i < len(tokens):
+
+        token = tokens[i]
+
+        # case: 22k / 22kt
+        if token.endswith("k") or token.endswith("kt"):
+            number = token.replace("k", "").replace("t", "")
+
+            if number in PURITY_MAP:
+                filters["purity"] = PURITY_MAP[number]
+                print("✔ Purity detected →", filters["purity"])
+
+                tokens.pop(i)
+                continue
+
+        # case: 22 karat / 22 kt / 22 purity
+        if token.isdigit() and token in PURITY_MAP:
+
+            next_word = tokens[i+1] if i+1 < len(tokens) else ""
+
+            if next_word in ["karat", "carat", "kt", "k", "purity"]:
+                filters["purity"] = PURITY_MAP[token]
+                print("✔ Purity detected →", filters["purity"])
+
+                tokens.pop(i)
+                tokens.pop(i)
+                continue
+
+        i += 1
+
+    query = " ".join(tokens)
+
+    return query, filters
+
 def extract_intent(query):
 
     global CATALOG_ENTITIES
@@ -194,7 +372,8 @@ def extract_intent(query):
 
     mugappu_detected = False
     mugappu_count = None
-
+    # 🔥 FIX: handle purity BEFORE anything else
+    query, filters = extract_purity(query, filters)
     query = query.lower()
 
     # STEP 1 — PURITY
@@ -202,6 +381,7 @@ def extract_intent(query):
     if purity:
         filters["purity"] = purity
 
+    '''
     # STEP 1A — PURITY MAP BACKUP
     for word in query.split():
         if word in PURITY_MAP:
@@ -209,6 +389,7 @@ def extract_intent(query):
             query = query.replace(word, "")
             print(f"✔ Purity detected (map) → {filters['purity']}")
             break
+    '''
     '''
     # STEP 1B — METAL
     METALS = ["gold", "silver"]
@@ -366,6 +547,36 @@ def extract_intent(query):
     important_attributes = ["metal", "purity", "stone_type", "gender", "weight_range"]
     detected = sum(1 for k in filters if k in important_attributes)
     attribute_score = detected / len(important_attributes)
+    
+    # ==========================================
+    # 🔥 INTELLIGENT DEFAULT BUSINESS BOOST
+    # ==========================================
+    search_preview = " ".join(tokens).strip()
+
+    CATEGORY_DEFAULT_BOOST = {
+        "earring": {"metal": "gold", "purity": "22k"},
+        "earrings": {"metal": "gold", "purity": "22k"},
+        "ring": {"metal": "gold", "purity": "22k"},
+        "rings": {"metal": "gold", "purity": "22k"},
+        "chain": {"metal": "gold", "purity": "22k"},
+        "necklace": {"metal": "gold", "purity": "22k"},
+        "metti": {"metal": "silver"}
+    }
+
+    if (
+        search_preview in CATEGORY_DEFAULT_BOOST
+        and "metal" not in filters
+        and "purity" not in filters
+    ):
+        defaults = CATEGORY_DEFAULT_BOOST[search_preview]
+
+        if "metal" in defaults:
+            boost_terms.append(defaults["metal"])
+
+        if "purity" in defaults:
+            boost_terms.append(defaults["purity"])
+
+        print(f"✔ Intelligent category boost → {defaults}")
 
     # FINAL TEXT
     search_text = " ".join(tokens)

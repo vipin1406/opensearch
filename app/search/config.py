@@ -78,3 +78,95 @@ NUMERIC_FIELDS = {
     "weight",
     "layers"
 }
+
+
+SYNONYM_MAP = {
+
+    # product synonyms
+    "metti": ["toe ring"],
+    "toe ring": ["metti"],
+    "anklet":['golusu'],
+    "golusu":['anklet'],
+    "pendant":['dollar'],
+    "dollar":['pendant'],
+    "earring":['stud'],
+    "jhumka":['jimikki'],
+    "jimikki":['jhumka'],
+    "mangalyam":['tali'],
+    "mangalsutra":['tali']
+
+
+}
+
+WEIGHT_OPERATORS = {
+    "under": "lt",
+    "below": "lt",
+    "less": "lt",
+
+    "above": "gt",
+    "over": "gt",
+    "more": "gt"
+}
+
+SOVEREIGN_UNITS = {
+    "sovereign",
+    "sovereigns",
+    "pavan",        # common in Tamil
+    "pavans",
+    "powan",
+    "powen",
+    "povun",
+    "savaran"
+}
+
+
+# ==========================================
+# 🔥 SMART WEIGHT PARSING CONFIG
+# ==========================================
+
+WEIGHT_PATTERNS = [
+    {
+        "type": "upper_bound",
+        "operators": {"under", "below", "less"}
+    },
+    {
+        "type": "lower_bound",
+        "operators": {"above", "over", "more"}
+    }
+]
+
+NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10
+}
+
+WEIGHT_INTENT = {
+    "light": {"lte": 5},
+    "lightweight": {"lte": 5},
+    "heavy": {"gte": 15}
+}
+
+SOVEREIGN_TO_GRAM = 8
+
+
+CATEGORY_DEFAULT_BOOST = {
+    "earring": {
+        "metal": "gold",
+        "purity": "22k"
+    },
+    "ring": {
+        "metal": "gold",
+        "purity": "22k"
+    },
+    "metti": {
+        "metal": "silver"
+    }
+}

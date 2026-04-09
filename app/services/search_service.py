@@ -4,7 +4,9 @@ from app.search.query_builder import build_search_query
 import json
 from datetime import datetime
 from app.search.correction import load_spell_map, apply_spell_mapping
-
+from app.search.normalizer import normalize_query
+from app.search.correction import apply_correction
+from app.search.synonym_handler import apply_synonyms
 
 
 INDEX_NAME = "jewellery_products"
@@ -50,23 +52,53 @@ def search_products(query):
     print("================================================")
 
     print("\n[INPUT] Query:", query)
+    query = normalize_query(query)
+
     
     # ==========================================
-    # 🔥 SPELL MAPPING (CORRECT PLACE)
+    # 🔥 STEP -1 — NORMALIZE (already you added)
+    # ==========================================
+   
+    query = normalize_query(query)
+
+    print("[NORMALIZED QUERY]:", query)
+
+    # ==========================================
+    # 🔥 STEP 0 — ATTRIBUTE EXTRACTION (NEW)
+    # ==========================================
+    from app.search.intent_extractor import extract_attributes
+
+    query, filters = extract_attributes(query)
+
+    print("[AFTER ATTRIBUTE EXTRACTION]:", query, filters)
+
+    # ==========================================
+    # 🔥 STEP 1 — SPELL MAP
     # ==========================================
     spell_map = load_spell_map()
     query = apply_spell_mapping(query, spell_map)
 
-    # 🔥 STEP 0 — CORRECTION
-    from app.search.correction import apply_correction
+    # ==========================================
+    # 🔥 STEP 2 — CORRECTION (SAFE NOW)
+    # ==========================================
     query = apply_correction(query)
+
     print("[CORRECTED QUERY]:", query)
 
-    # ------------------------------------------------
-    # STEP 1 — INTENT EXTRACTION
-    # ------------------------------------------------
+
+    # STEP — SYNONYM EXPANSION
+    query = apply_synonyms(query)
+
+    print("[AFTER SYNONYMS]:", query)
+
+    # ==========================================
+    # 🔥 STEP 3 — INTENT
+    # ==========================================
     intent_data = extract_intent(query)
-    boost_terms = intent_data.get("boost_terms", [])
+
+    # 🔥 MERGE FILTERS
+    intent_data["filters"].update(filters)
+
 
     # ==========================================
     # 🔥 DEFINE use_phonetic (FIX)
