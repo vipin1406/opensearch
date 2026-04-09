@@ -1,4 +1,3 @@
-
 services:
 
   # ==============================
@@ -10,9 +9,9 @@ services:
     container_name: opensearch
     environment:
       - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      - OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS}
       - bootstrap.memory_lock=true
-      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_SECURITY_PLUGIN=${DISABLE_SECURITY_PLUGIN}
     ulimits:
       memlock:
         soft: -1
@@ -20,36 +19,8 @@ services:
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     ports:
-      - "9200:9200"
+      - "${OPENSEARCH_PORT}:9200"
       - "9600:9600"
-    networks:
-      - jewellery-network
-
-  # ==============================
-  # OpenSearch Dashboards
-  # ==============================
-  dashboards:
-    image: opensearchproject/opensearch-dashboards:2.11.0
-    container_name: dashboards
-    ports:
-      - "5601:5601"
-    environment:
-      - OPENSEARCH_HOSTS=http://opensearch:9200
-    depends_on:
-      - opensearch
-    networks:
-      - jewellery-network
-
-  # ==============================
-  # Redis (Optional Cache)
-  # ==============================
-  redis:
-    image: redis:7
-    container_name: jewellery-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
     networks:
       - jewellery-network
 
@@ -65,12 +36,11 @@ services:
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "${API_PORT}:8000"
     volumes:
       - .:/app
     depends_on:
       - opensearch
-      - redis
     networks:
       - jewellery-network
 
@@ -80,7 +50,6 @@ services:
 # ==============================
 volumes:
   opensearch-data:
-  redis-data:
 
 # ==============================
 # Networks
