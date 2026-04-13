@@ -70,7 +70,7 @@ def build_search_query(search_text, filters=None, boost_terms=None, use_phonetic
                             "type": "cross_fields",
                             "fields": [
                                 "product_name^4",
-                                "product_type^3",
+                                "product_type^5",
                                 "tags^5",                                "product_name.synonym^3",
                                 "coated_with^2",
                                 "motifs"
@@ -86,7 +86,7 @@ def build_search_query(search_text, filters=None, boost_terms=None, use_phonetic
                             "type": "best_fields",
                             "fields": [
                                 "product_name^4",
-                                "product_type^3",
+                                "product_type^5",
                                 "tags^5",
                                 "coated_with^2",
                                 "motifs"
@@ -276,7 +276,7 @@ def build_search_query(search_text, filters=None, boost_terms=None, use_phonetic
                     "term": {
                         "product_type": {
                             "value": pt,
-                            "boost": 3   # reduced from 8
+                            "boost": 15  # reduced from 8
                         }
                     }
                 })
